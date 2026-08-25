@@ -5,6 +5,9 @@ These were the major changes contributing to each release:
 
 ### 0.x.x
 
+* New example notebook: _Index Inclusion Strategy_, on anticipating
+  index additions ahead of announcement (the "index effect")
+
 ### 0.6.5
 (2025-07-30)
 

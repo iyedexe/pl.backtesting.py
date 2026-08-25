@@ -33,7 +33,8 @@ urlpath=lab%2Ftree%2Fdoc%2Fexamples%2FQuick%20Start%20User%20Guide.ipynb
 
 ## Example Strategies
 
-* (contributions welcome)
+* [Index Inclusion Strategy (trading the "index effect")](../examples/Index Inclusion Strategy.html)
+* (more contributions welcome)
 
 
 .. tip::
