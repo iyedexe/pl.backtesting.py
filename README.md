@@ -12,6 +12,12 @@ Backtesting.py
 
 Backtest trading strategies with Python.
 
+> **This fork adds [`pmcc/`](pmcc/README.md)** — a standalone Poor Man's
+> Covered Call research module: a 2000–2015 backtest on 17 French (CAC 40)
+> large caps with synthetic option pricing, benchmarks, an 800-run sensitivity
+> grid, and a paper-trading execution scaffold. See
+> [`pmcc/README.md`](pmcc/README.md) for methodology, results and the verdict.
+
 [**Project website**](https://kernc.github.io/backtesting.py) + [Documentation] &nbsp;&nbsp;|&nbsp; [YouTube]
 
 [Documentation]: https://kernc.github.io/backtesting.py/doc/backtesting/

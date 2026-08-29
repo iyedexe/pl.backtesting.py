@@ -22,3 +22,12 @@ build/*
 *~*
 
 .venv/
+
+# pmcc live-executor state
+pmcc_state_*.json
+paper_broker_*.json
+STOP
+
+# but keep generated pmcc result charts
+!pmcc/results/*.png
+pmcc/results/all_curves.csv.gz
