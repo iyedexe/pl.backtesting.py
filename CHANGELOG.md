@@ -7,6 +7,8 @@ These were the major changes contributing to each release:
 
 * New example notebook: _Index Inclusion Strategy_, on anticipating
   index additions ahead of announcement (the "index effect")
+* New `bot/`: a Telegram signal bot applying the index-inclusion strategy
+  to live data for the S&P 500, Nasdaq-100, FTSE 100 and DAX 40
 
 ### 0.6.5
 (2025-07-30)

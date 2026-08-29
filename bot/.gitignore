@@ -1,0 +1,4 @@
+bot_state.json
+.cache/
+*.log
+__pycache__/
