@@ -1,0 +1,12 @@
+{
+  "study": "forex",
+  "quick": false,
+  "ppy": 252,
+  "cost_bp": 2.0,
+  "panel_shape": [
+    6932,
+    11
+  ],
+  "start": "1999-01-04",
+  "end": "2026-08-21"
+}

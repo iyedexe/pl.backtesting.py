@@ -1,0 +1,12 @@
+{
+  "study": "cross",
+  "quick": false,
+  "ppy": 252,
+  "cost_bp": 12.0,
+  "panel_shape": [
+    11146,
+    9
+  ],
+  "start": "1990-01-02",
+  "end": "2026-08-25"
+}

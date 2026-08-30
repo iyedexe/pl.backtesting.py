@@ -1,0 +1,12 @@
+{
+  "study": "commodities",
+  "quick": false,
+  "ppy": 252,
+  "cost_bp": 5.0,
+  "panel_shape": [
+    9394,
+    3
+  ],
+  "start": "1990-01-02",
+  "end": "2026-08-25"
+}
