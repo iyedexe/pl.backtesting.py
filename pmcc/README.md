@@ -144,6 +144,23 @@ uv run python -m pmcc.live.run_live --ticker MC.PA --broker paper   # dry-run th
 Optional extras: `pmcc-fetch` (yfinance, to extend the dataset locally) and
 `pmcc-live` (ib_insync, for the Interactive Brokers adapter skeleton).
 
+### Backtesting a recent window (e.g. 2022–2026)
+
+The bundled data ends in 2015. On a machine with market-data access:
+
+```bash
+uv sync --extra pmcc --extra pmcc-fetch
+uv run python -m pmcc.fetch_data          # writes the extended dataset (from 2000 -- keep it: warm-up needs history)
+uv run python -m pmcc.run_backtest headline --start 2022-01-01 --end 2026-08-01 --initial 1000
+```
+
+The engine auto-detects the extended files (prices and VIX/S&P for the
+premium factor; Total is fetched under its post-2021 ticker TTE.PA). Note
+that windowed runs overwrite `pmcc/results/`; the committed CSVs are the
+canonical 2000–2015 €100k run. Dividend-yield constants in `pmcc/data.py`
+are 2000–2015 averages — check them against the fetched
+`dividend_yields_estimated.csv` for recent windows.
+
 Key knobs (see `PMCCParams` / `Engine`): `short_target_delta` (0.25),
 `leaps_target_delta` (0.80), `leaps_open_min_dte` (540 — 720 tested slightly
 better), `defend_delta` (None — the 0.60 defend rule *hurt* in every name

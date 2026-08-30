@@ -70,25 +70,39 @@ LIQUID_OPTIONS = ['FP.PA', 'MC.PA', 'SAN.PA', 'BNP.PA', 'OR.PA',
                   'AI.PA', 'SU.PA', 'AIR.PA', 'CS.PA', 'DG.PA']
 
 # EURIBOR 3M annual averages (percent), used as the risk-free/cash rate.
+# Approximate public figures; extend when running windows past the last year.
 _EUR_RATES = {
     2000: 4.40, 2001: 4.26, 2002: 3.32, 2003: 2.33, 2004: 2.11, 2005: 2.19,
     2006: 3.08, 2007: 4.28, 2008: 4.64, 2009: 1.23, 2010: 0.81, 2011: 1.39,
-    2012: 0.58, 2013: 0.22, 2014: 0.21, 2015: -0.02, 2016: -0.26,
+    2012: 0.58, 2013: 0.22, 2014: 0.21, 2015: -0.02, 2016: -0.26, 2017: -0.33,
+    2018: -0.32, 2019: -0.36, 2020: -0.43, 2021: -0.55, 2022: 0.35,
+    2023: 3.43, 2024: 3.57, 2025: 2.10, 2026: 1.90,
 }
 
 
 _CACHE: dict = {}
 
+#: Written by ``python -m pmcc.fetch_data`` (run on your own machine); when
+#: present it transparently replaces the bundled 2000-2015 dataset.
+EXTENDED_FILE = 'prices_adj_fr_extended.csv.gz'
+
 
 def load_adjusted_prices() -> pd.DataFrame:
-    """Daily adjusted closes for the universe + '^FCHI', 2000..2015.
+    """Daily adjusted closes for the universe + '^FCHI'.
 
+    Uses the bundled 2000..2015 dataset, or -- if ``pmcc/data/{EXTENDED_FILE}``
+    exists (see :mod:`pmcc.fetch_data`) -- that extended dataset instead.
     Cached; treat the result as read-only.
     """
     if 'px' not in _CACHE:
-        path = os.path.join(DATA_DIR, 'prices_adj_fr_2000_2015.csv.gz')
+        extended = os.path.join(DATA_DIR, EXTENDED_FILE)
+        path = extended if os.path.exists(extended) \
+            else os.path.join(DATA_DIR, 'prices_adj_fr_2000_2015.csv.gz')
         px = pd.read_csv(path, index_col=0, parse_dates=True)
         px.index.name = 'Date'
+        if path == extended:
+            print(f'[pmcc.data] using extended dataset '
+                  f'({px.index[0].date()} .. {px.index[-1].date()})')
         _CACHE['px'] = px
     return _CACHE['px']
 
@@ -110,9 +124,15 @@ def eur_short_rate(dates: pd.DatetimeIndex) -> pd.Series:
     return pd.Series(vals, index=dates, name='r')
 
 
+#: Written by ``python -m pmcc.fetch_data`` alongside the extended prices.
+EXTENDED_VIX_FILE = 'vix_sp500_extended.csv.gz'
+
+
 def load_vix_sp500() -> pd.DataFrame:
     if 'vix' not in _CACHE:
-        path = os.path.join(DATA_DIR, 'vix_sp500_1990_2015.csv.gz')
+        extended = os.path.join(DATA_DIR, EXTENDED_VIX_FILE)
+        path = extended if os.path.exists(extended) \
+            else os.path.join(DATA_DIR, 'vix_sp500_1990_2015.csv.gz')
         _CACHE['vix'] = pd.read_csv(path, index_col=0, parse_dates=True)
     return _CACHE['vix']
 

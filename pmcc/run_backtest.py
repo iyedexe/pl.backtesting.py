@@ -7,13 +7,19 @@ Usage::
     python -m pmcc.run_backtest sensitivity   # parameter grid on 5 names
     python -m pmcc.run_backtest all           # both + plots + RESULTS.md
 
+Optional window/capital (dates must lie inside the loaded dataset -- extend
+it first with ``python -m pmcc.fetch_data`` on a machine with market-data
+access)::
+
+    python -m pmcc.run_backtest headline --start 2022-01-01 --end 2026-08-01 --initial 1000
+
 Outputs go to ``pmcc/results/``.
 """
 from __future__ import annotations
 
+import argparse
 import itertools
 import os
-import sys
 from concurrent.futures import ProcessPoolExecutor
 
 import pandas as pd
@@ -53,7 +59,8 @@ def run_one(job: dict) -> dict:
                  skew_slope=job.get('skew', 0.10),
                  div_yield=job.get('div_yield'),
                  costs=CostModel(opt_half_spread_pct=job.get('spread', 0.02)),
-                 initial_cash=INITIAL)
+                 initial_cash=job.get('initial', INITIAL),
+                 start=job.get('start'), end=job.get('end'))
     strat = make_strategy(job['strategy'], **job.get('strat_kw', {}))
     res = eng.run(strat)
     st = compute_stats(res.equity, eng.df['r'])
@@ -118,7 +125,8 @@ def run_jobs(jobs: list[dict], workers: int | None = None) -> list[dict]:
         return list(ex.map(run_one, jobs, chunksize=4))
 
 
-def aggregate_portfolio(records: list[dict], tickers: list[str]) -> pd.DataFrame:
+def aggregate_portfolio(records: list[dict], tickers: list[str],
+                        initial: float = INITIAL) -> pd.DataFrame:
     """Daily-rebalanced equal-weight portfolio per strategy: each day's
     portfolio return is the mean of the daily returns of all live per-ticker
     backtests (late starters simply join the average when their data begins)."""
@@ -128,21 +136,24 @@ def aggregate_portfolio(records: list[dict], tickers: list[str]) -> pd.DataFrame
               if r['strategy'] == strategy and r['ticker'] in tickers and '_equity' in r]
         rets = pd.concat([c.pct_change() for c in cs], axis=1)
         port_ret = rets.mean(axis=1).fillna(0.0)
-        curves[strategy] = INITIAL * (1 + port_ret).cumprod()
+        curves[strategy] = initial * (1 + port_ret).cumprod()
     return pd.DataFrame(curves)
 
 
-def main(mode: str = 'all'):
+def main(mode: str = 'all', window: dict | None = None):
+    window = {k: v for k, v in (window or {}).items() if v is not None}
     os.makedirs(RESULTS_DIR, exist_ok=True)
     if mode in ('headline', 'all'):
-        print(f'headline: {len(headline_jobs())} runs...')
-        recs = run_jobs(headline_jobs())
+        jobs = [{**j, **window} for j in headline_jobs()]
+        print(f'headline: {len(jobs)} runs...')
+        recs = run_jobs(jobs)
         tbl = pd.DataFrame([{k: v for k, v in r.items() if k != '_equity'}
                             for r in recs])
         tbl.to_csv(os.path.join(RESULTS_DIR, 'headline_stats.csv'), index=False)
         print('wrote headline_stats.csv', tbl.shape)
 
-        port = aggregate_portfolio(recs, datamod.LIQUID_OPTIONS)
+        port = aggregate_portfolio(recs, datamod.LIQUID_OPTIONS,
+                                   initial=window.get('initial', INITIAL))
         port.to_csv(os.path.join(RESULTS_DIR, 'portfolio_curves.csv'))
         rates = datamod.eur_short_rate(port.index)
         pstats = pd.DataFrame({s: compute_stats(port[s], rates) for s in port})
@@ -160,7 +171,7 @@ def main(mode: str = 'all'):
                       compression='gzip')
 
     if mode in ('sensitivity', 'all'):
-        jobs = sensitivity_jobs()
+        jobs = [{**j, **window} for j in sensitivity_jobs()]
         print(f'sensitivity: {len(jobs)} runs...')
         recs = run_jobs(jobs)
         for j, r in zip(jobs, recs):
@@ -176,4 +187,12 @@ def main(mode: str = 'all'):
 
 
 if __name__ == '__main__':
-    main(sys.argv[1] if len(sys.argv) > 1 else 'all')
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument('mode', nargs='?', default='all',
+                    choices=['headline', 'sensitivity', 'all'])
+    ap.add_argument('--start', help='backtest window start, YYYY-MM-DD')
+    ap.add_argument('--end', help='backtest window end, YYYY-MM-DD')
+    ap.add_argument('--initial', type=float, help='starting capital in EUR '
+                                                  f'(default {INITIAL:.0f})')
+    a = ap.parse_args()
+    main(a.mode, window={'start': a.start, 'end': a.end, 'initial': a.initial})
