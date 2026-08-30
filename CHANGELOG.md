@@ -3,6 +3,21 @@ What's New
 
 These were the major changes contributing to each release:
 
+### Fork: pairs-trading research lab
+(2026-08-30)
+
+* New `pairs_trading` package: cointegration/half-life/Hurst statistics,
+  Kalman hedge ratios, a two-leg dollar-neutral backtest engine,
+  walk-forward harness with formation-only gating, universe screening,
+  five asset-class studies (crypto/stocks/forex/commodities/cross-asset),
+  and the `pairs` CLI producing `research/reports/report.md`.
+* Vendored reproducible daily data under `research/data/` (see SOURCES.md).
+* Packaging migrated from `setup.py` to PEP 621 `pyproject.toml`,
+  managed with [uv](https://docs.astral.sh/uv/) (`uv.lock` committed);
+  CI ported to uv.
+* Bugfix: `FractionalBacktest` in-place indicator scaling failed under
+  pandas ≥ 3 copy-on-write (read-only buffers).
+
 ### 0.x.x
 
 ### 0.6.5

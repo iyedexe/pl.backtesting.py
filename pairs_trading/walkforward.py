@@ -216,7 +216,7 @@ def walk_forward_portfolio(panel: pd.DataFrame,
                  & scr['half_life'].between(wf_cfg.min_half_life,
                                             wf_cfg.max_half_life)
                  & scr['beta'].between(eng_cfg.min_beta, eng_cfg.max_beta)]
-        chosen = ok.nsmallest(select_top, 'eg_pvalue')
+        chosen = ok.nsmallest(select_top, 'eg_pvalue') if len(ok) else ok
         selections.append({'start': idx_trade[0],
                            'pairs': [f'{r.y}/{r.x}' for r in chosen.itertuples()]})
         pair_rets = []

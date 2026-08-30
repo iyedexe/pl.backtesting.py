@@ -389,7 +389,11 @@ def run_btpy_crosscheck(quick: bool = False) -> Path:
     from .btpy_adapter import ratio_ohlc, run_backtestingpy
     from .signals import generate_signals, zscore
     rows = {}
-    cases = [('crypto', 'BTC', 'ETH'), ('stocks', 'KO', 'PEP')]
+    # Pairs whose price ratio is stable enough for the beta=1 single-instrument
+    # mapping (an all-in short of a trending ratio, e.g. BTC/ETH 2016-17, gets
+    # margin-called in backtesting.py — precisely why the two-leg engine is
+    # the source of truth for headline results).
+    cases = [('stocks', 'KO', 'PEP'), ('commodities', 'WTI', 'BRENT')]
     md = ['\n## Cross-check against backtesting.py\n',
           'The same z-score rule, run through the bundled `backtesting.py` '
           'engine on the *price-ratio* approximation (single instrument, '

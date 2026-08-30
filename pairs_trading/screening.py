@@ -63,6 +63,8 @@ def screen_panel(panel: pd.DataFrame,
                      'half_life': eg.half_life, 'hurst': eg.hurst,
                      'n_obs': eg.n_obs})
     df = pd.DataFrame(rows, columns=SCREEN_COLUMNS)
+    df = df.astype({c: float for c in SCREEN_COLUMNS
+                    if c not in ('y', 'x', 'n_obs')} | {'n_obs': int})
     return df.sort_values('eg_pvalue').reset_index(drop=True)
 
 
