@@ -251,7 +251,11 @@ def walk_forward_portfolio(panel: pd.DataFrame,
                 all_trades.append(res.trades.assign(window=idx_trade[0],
                                                     pair=f'{r.y}/{r.x}'))
         if pair_rets:
-            rets = pd.concat(pair_rets, axis=1).mean(axis=1)
+            # Committed-capital weighting (GGR): capital is split into
+            # `select_top` fixed slots; a window with fewer qualifying pairs
+            # leaves the empty slots in cash rather than concentrating — so a
+            # single busted pair can cost at most 1/select_top of equity.
+            rets = pd.concat(pair_rets, axis=1).sum(axis=1) / select_top
         else:
             rets = pd.Series(0.0, index=idx_trade)
         window_rows.append({

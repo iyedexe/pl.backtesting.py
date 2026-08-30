@@ -342,7 +342,8 @@ def run_study(study: str, quick: bool = False) -> Path:
         md.append(
             f'Pairs re-selected each window from formation data only '
             f'(corr ≥ {pf_corr}, EG p < {wf_cfg.coint_pvalue_gate}, half-life '
-            f'gate), equal-weighted. Sharpe **{s["sharpe"]:.2f}**, CAGR '
+            f'gate), committed capital split into {top_n} fixed slots '
+            f'(unfilled slots stay in cash). Sharpe **{s["sharpe"]:.2f}**, CAGR '
             f'{s["cagr_pct"]:.1f}%, max DD {s["max_dd_pct"]:.1f}%, '
             f'{s["n_trades"]:.0f} trades, NW t-stat {s["nw_tstat"]:.2f}.\n')
         md.append(f'\n![portfolio](figures/{Path(fig_pf).name})\n')
