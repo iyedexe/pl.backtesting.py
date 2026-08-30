@@ -552,8 +552,10 @@ class FractionalBacktest(Backtest):
         trades[['EntryPrice', 'ExitPrice', 'TP', 'SL']] /= self._fractional_unit
 
         indicators = result['_strategy']._indicators
-        for indicator in indicators:
+        for i, indicator in enumerate(indicators):
             if indicator._opts['overlay']:
+                if not indicator.flags.writeable:  # e.g. pandas>=3 copy-on-write view
+                    indicators[i] = indicator = indicator.copy()
                 indicator /= self._fractional_unit
 
         return result
