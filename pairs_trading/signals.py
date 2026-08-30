@@ -71,9 +71,11 @@ def generate_signals(z: pd.Series, cfg: SignalConfig) -> pd.DataFrame:
         if state == 0:
             if abs(zt) < cfg.entry:
                 armed = True
-            if armed and zt <= -cfg.entry:
+            # Enter only inside the [entry, stop) band: a z-score already
+            # beyond the stop is treated as a structural break, not a signal.
+            if armed and -cfg.stop < zt <= -cfg.entry:
                 state, held = 1, 0
-            elif armed and zt >= cfg.entry:
+            elif armed and cfg.stop > zt >= cfg.entry:
                 state, held = -1, 0
         elif state == 1:
             held += 1

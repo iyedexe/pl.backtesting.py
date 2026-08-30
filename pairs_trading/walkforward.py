@@ -45,19 +45,20 @@ def kalman_state_paths(la: pd.Series, lb: pd.Series,
     The state is initialized from an OLS fit on the first ``init_bars``
     (which the walk-forward never trades — they are formation-only), then the
     filter runs once over everything. The hedge ratio at *t* therefore uses
-    information up to *t* only. The tradable spread is ``la - beta_t * lb``
-    with **no intercept in the state**: a random-walk alpha would absorb the
-    very mean reversion the strategy trades (Kalman innovations are ~white by
-    construction), and any constant level is removed by the z-score's own
-    mean. Restarting the filter every window would be wrong for a slow
-    ``delta`` (it could never converge from a diffuse prior); continuity is
-    the point of the filter.
+    information up to *t* only. The intercept is **pinned** at its OLS value
+    (``alpha_drift=False``): a random-walk alpha would absorb the very mean
+    reversion the strategy trades (Kalman innovations are ~white by
+    construction). The tradable spread is ``la - alpha0 - beta_t * lb``; its
+    slow level moves are handled by the z-score's own mean. Restarting the
+    filter every window would be wrong for a slow ``delta`` (it could never
+    converge from a diffuse prior); continuity is the point of the filter.
     """
     alpha0, beta0 = ols_hedge(la.iloc[:init_bars], lb.iloc[:init_bars])
-    kf = KalmanHedge(delta=delta, beta0=beta0, alpha0=alpha0, p0=1e-4)
+    kf = KalmanHedge(delta=delta, beta0=beta0, alpha0=alpha0, p0=1e-4,
+                     alpha_drift=False)
     hist = kf.filter(la, lb)
     beta_path = hist['beta']
-    spread_path = la - beta_path * lb
+    spread_path = la - alpha0 - beta_path * lb
     return beta_path, spread_path
 
 
@@ -146,7 +147,9 @@ def walk_forward_pair(prices: pd.DataFrame,
 
         reject = ''
         if wf_cfg.gate:
-            if gate_p > wf_cfg.coint_pvalue_gate:
+            # `not (p <= gate)` (rather than `p > gate`) so a NaN p-value —
+            # degenerate formation data — rejects instead of slipping through.
+            if not (gate_p <= wf_cfg.coint_pvalue_gate):
                 reject = 'coint'
             elif not (wf_cfg.min_half_life <= hl <= wf_cfg.max_half_life):
                 reject = 'half_life'
@@ -194,9 +197,17 @@ def walk_forward_portfolio(panel: pd.DataFrame,
     (correlation prefilter, then Engle-Granger + half-life gate), take the
     ``select_top`` pairs by EG p-value, trade them equal-weighted through the
     trading window, then re-select. Selection is therefore fully out-of-sample.
+
+    Note: the screen's EG test is orientation-optimized (the better of both
+    regressand choices), so its 5% level is slightly more liberal than the
+    fixed-orientation gate in :func:`walk_forward_pair`. Kalman mode is not
+    supported here — a per-window filter restart would defeat the filter.
     """
     from .screening import screen_panel  # local import to avoid cycle
 
+    if wf_cfg.use_kalman:
+        raise NotImplementedError('walk_forward_portfolio supports the OLS '
+                                  'estimator only')
     dates = panel.index
     n = len(dates)
     all_returns: list[pd.Series] = []
@@ -212,10 +223,13 @@ def walk_forward_portfolio(panel: pd.DataFrame,
         idx_trade = dates[start:end]
         scr = screen_panel(form_panel, corr_min=corr_min,
                            min_obs=int(wf_cfg.formation * 0.9))
-        ok = scr[(scr['eg_pvalue'] <= wf_cfg.coint_pvalue_gate)
-                 & scr['half_life'].between(wf_cfg.min_half_life,
-                                            wf_cfg.max_half_life)
-                 & scr['beta'].between(eng_cfg.min_beta, eng_cfg.max_beta)]
+        if wf_cfg.gate:
+            ok = scr[(scr['eg_pvalue'] <= wf_cfg.coint_pvalue_gate)
+                     & scr['half_life'].between(wf_cfg.min_half_life,
+                                                wf_cfg.max_half_life)
+                     & scr['beta'].between(eng_cfg.min_beta, eng_cfg.max_beta)]
+        else:
+            ok = scr
         chosen = ok.nsmallest(select_top, 'eg_pvalue') if len(ok) else ok
         selections.append({'start': idx_trade[0],
                            'pairs': [f'{r.y}/{r.x}' for r in chosen.itertuples()]})

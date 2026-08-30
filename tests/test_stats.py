@@ -83,3 +83,36 @@ def test_rolling_beta_matches_global_on_static_relationship(coint_pair):
 def test_half_life_scales_with_kappa(kappa, lo, hi):
     s = pd.Series(simulate_ou(30_000, kappa=kappa, seed=8))
     assert lo < stats.half_life(s) < hi
+
+
+def test_kalman_alpha_can_be_pinned():
+    rng = np.random.default_rng(21)
+    n = 1000
+    lb = pd.Series(np.log(50) + np.cumsum(rng.normal(0, 0.01, n)))
+    la = 0.3 + 1.5 * lb + rng.normal(0, 0.005, n)
+    out = stats.KalmanHedge(alpha0=0.3, beta0=1.5, alpha_drift=False,
+                            delta=1e-5).filter(pd.Series(la), lb)
+    assert (out['alpha'] == 0.3).all()
+    assert abs(out['beta'].iloc[-200:].mean() - 1.5) < 0.1
+
+
+def test_engle_granger_nan_and_short_input_yield_nan_pvalue():
+    rng = np.random.default_rng(4)
+    a = pd.Series(np.exp(np.cumsum(rng.normal(0, 0.01, 100))) * 100)
+    b = pd.Series(np.exp(np.cumsum(rng.normal(0, 0.01, 100))) * 50)
+    a.iloc[:75] = np.nan  # only 25 joint observations remain
+    eg = stats.engle_granger(a, b)
+    assert np.isnan(eg.pvalue)  # gate treats NaN as reject, never as pass
+    # NaNs inside an otherwise long series are dropped pairwise and it runs
+    a2, b2 = a.copy(), b.copy()
+    a2.iloc[:] = np.exp(np.cumsum(rng.normal(0, 0.01, 100))) * 100
+    a2.iloc[[5, 50]] = np.nan
+    eg2 = stats.engle_granger(a2, b2)
+    assert eg2.n_obs == 98 and np.isfinite(eg2.pvalue) and eg2.pvalue > 0
+
+
+def test_half_life_uses_exact_ar1_formula():
+    # phi = -0.5 -> AR coefficient 0.5 -> exact half-life exactly 1 bar
+    s = pd.Series(simulate_ou(30_000, kappa=0.5, sigma=1.0, seed=2))
+    hl = stats.half_life(s)
+    assert 0.9 < hl < 1.1

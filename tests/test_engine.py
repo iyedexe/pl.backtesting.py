@@ -213,3 +213,28 @@ def test_short_leg_blowup_floors_equity_at_zero():
     assert res.trades.iloc[0]['reason'] == 'bust'
     # ledger keeps the uncapped economics of the losing trade
     assert res.trades.iloc[0]['pnl'] == pytest.approx(-1.5)
+
+
+def test_engine_rejects_nan_prices():
+    px = _prices([100, np.nan, 100], [50, 50, 50])
+    with pytest.raises(ValueError, match='NaN'):
+        backtest_pair(px, _side([1, 1, 1], px.index), 1.0, NOCOST)
+
+
+def test_no_entry_on_final_bar_even_without_lag():
+    cfg = EngineConfig(cost=CostModel(10.0), execution_lag=0)
+    px = _prices([100, 100, 100], [50, 50, 50])
+    res = backtest_pair(px, _side([0, 0, 1], px.index), 1.0, cfg)
+    assert len(res.trades) == 0
+    assert (res.equity == 1.0).all()
+
+
+def test_hedge_ratio_is_lagged_like_the_signal():
+    # Beta jumps to 3.0 on the execution bar; sizing must use the beta known
+    # at the signal close (1.0), not the same-close update.
+    px = _prices([100, 100, 100, 100], [50, 50, 50, 50])
+    beta = pd.Series([1.0, 3.0, 3.0, 3.0], index=px.index)
+    res = backtest_pair(px, _side([1, 1, 1, 1], px.index), beta, NOCOST)
+    qa, qb = res.positions[['qa', 'qb']].iloc[1]
+    assert qa * 100 == pytest.approx(0.5)   # N = 1/(1+1), not 1/(1+3)
+    assert qb * 50 == pytest.approx(-0.5)

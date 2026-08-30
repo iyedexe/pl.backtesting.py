@@ -52,8 +52,21 @@ def engle_granger(price_a: pd.Series, price_b: pd.Series,
 
     The EG test is not symmetric in the choice of regressand; when
     ``try_both_orientations`` we run both directions and keep the one with the
-    lower MacKinnon p-value (recording which leg ended up as ``y``).
+    lower MacKinnon p-value (recording which leg ended up as ``y``). Note this
+    makes a fixed significance level slightly more liberal than a single
+    fixed-orientation test.
+
+    NaNs are dropped pairwise; with fewer than 30 joint observations the
+    result carries ``pvalue=nan`` (statsmodels' ``coint`` would otherwise
+    return a spurious 0.0 on degenerate input).
     """
+    both = pd.concat({'a': price_a, 'b': price_b}, axis=1).dropna()
+    if len(both) < 30:
+        return EGResult(y=names[0], x=names[1], alpha=float('nan'),
+                        beta=float('nan'), tstat=float('nan'),
+                        pvalue=float('nan'), half_life=float('inf'),
+                        hurst=float('nan'), n_obs=len(both))
+    price_a, price_b = both['a'], both['b']
     la, lb = np.log(price_a.astype(float)), np.log(price_b.astype(float))
 
     def one(y: pd.Series, x: pd.Series, ny: str, nx: str) -> EGResult:
@@ -84,9 +97,10 @@ def adf_pvalue(series: pd.Series) -> float:
 def half_life(spread: pd.Series) -> float:
     """Half-life of mean reversion in bars, from the discrete OU/AR(1) fit.
 
-    Regress ``Δs_t = a + φ·s_{t-1} + ε``; the OU mean-reversion speed is
-    ``κ = -φ`` per bar and the half-life is ``ln(2)/κ``. Returns ``inf`` when
-    the fit shows no mean reversion (φ >= 0).
+    Regress ``Δs_t = a + φ·s_{t-1} + ε``; the AR(1) coefficient is ``1 + φ``
+    and the exact discrete half-life is ``ln(2) / -ln(1 + φ)`` (the linearized
+    ``ln(2)/-φ`` overstates fast half-lives, loosening the min-half-life
+    gate). Returns ``inf`` when the fit shows no mean reversion (φ >= 0).
     """
     s = np.asarray(spread, float)
     s = s[~np.isnan(s)]
@@ -97,7 +111,7 @@ def half_life(spread: pd.Series) -> float:
     phi, _ = np.polyfit(lag, ds, 1)
     if phi >= 0:
         return float('inf')
-    return float(np.log(2) / -phi)
+    return float(np.log(2) / -np.log1p(max(phi, -0.9999)))
 
 
 def hurst_exponent(series: pd.Series, max_lag: int = 100) -> float:
@@ -139,13 +153,20 @@ class KalmanHedge:
     This is the classic formulation popularized by E. Chan (2013), where ``δ``
     controls how fast the hedge ratio may drift. The filter is strictly causal:
     the estimate at *t* uses observations up to and including *t*.
+
+    ``alpha_drift=False`` pins the intercept at ``alpha0`` (zero process noise
+    on the alpha state): only ``beta`` follows a random walk. This is the mode
+    the walk-forward hedge path uses, because a drifting intercept absorbs the
+    spread's own mean reversion.
     """
 
     def __init__(self, delta: float = 1e-4, ve: float = 1e-3,
-                 beta0: float = 1.0, alpha0: float = 0.0, p0: float = 1.0):
+                 beta0: float = 1.0, alpha0: float = 0.0, p0: float = 1.0,
+                 alpha_drift: bool = True):
         self.delta, self.ve = delta, ve
         self.theta0 = np.array([alpha0, beta0], float)
         self.p0 = p0
+        self.alpha_drift = alpha_drift
 
     def filter(self, log_a: pd.Series, log_b: pd.Series) -> pd.DataFrame:
         """Run the filter; returns DataFrame [alpha, beta, resid] indexed like input."""
@@ -153,8 +174,12 @@ class KalmanHedge:
         x = np.asarray(log_b, float)
         n = len(y)
         wt = self.delta / (1 - self.delta) * np.eye(2)
+        if not self.alpha_drift:
+            wt[0, 0] = 0.0
         theta = self.theta0.copy()
         p = np.eye(2) * self.p0
+        if not self.alpha_drift:
+            p[0, 0] = 0.0  # alpha known and fixed at alpha0
         out = np.empty((n, 3))
         for t in range(n):
             h = np.array([1.0, x[t]])

@@ -67,3 +67,9 @@ def test_zscore_is_strictly_trailing():
     s2.iloc[-1] = 1000
     z2 = zscore(s2, 5)
     pd.testing.assert_series_equal(z.iloc[:-1], z2.iloc[:-1])
+
+
+def test_no_entry_beyond_stop_band():
+    # A z-score already past the stop is a structural break, not an entry.
+    sigs = generate_signals(_z([0.5, -5.0, -4.9, -1.0, -2.5]), CFG)
+    assert list(sigs['side']) == [0, 0, 0, 0, 1]

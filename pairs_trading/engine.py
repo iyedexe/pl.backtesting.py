@@ -8,7 +8,8 @@ is exactly the P&L of the underlying long/short portfolio.
 Position convention: a *long spread* position (+1) with hedge ratio ``beta``
 allocates ``N = equity * leverage / (1 + beta)`` dollars long leg A and
 ``beta * N`` dollars short leg B, so that the position's return per bar is
-``N * (r_A - beta * r_B)`` and gross exposure equals ``equity * leverage``.
+``N * (r_A - beta * r_B)`` and gross exposure equals ``equity * leverage``
+(beta-weighted hedging: net exposure is ``N * (1 - beta)``, zero at beta = 1).
 
 Timing convention: the ``side`` input is the target decided on the close of
 bar *t* (from information up to and including that close); execution happens on
@@ -64,9 +65,15 @@ def backtest_pair(prices: pd.DataFrame,
     a = prices['a'].to_numpy(float)
     b = prices['b'].to_numpy(float)
     n = len(idx)
+    if np.isnan(a).any() or np.isnan(b).any():
+        raise ValueError('prices contain NaN — inner-join the legs first '
+                         '(see pairs_trading.data.aligned_pair)')
     if isinstance(beta, (int, float)):
         beta = pd.Series(float(beta), index=idx)
-    beta_exec = beta.reindex(idx).ffill().to_numpy(float)
+    # The hedge ratio is lagged like the signal: a trade executed on close
+    # t + lag is sized with the beta known at the *signal* close t.
+    beta_exec = (beta.reindex(idx).ffill()
+                 .shift(cfg.execution_lag).to_numpy(float))
     target = (side.reindex(idx).fillna(0).astype(int)
               .shift(cfg.execution_lag).fillna(0).to_numpy())
     if reasons is None:
@@ -108,8 +115,10 @@ def backtest_pair(prices: pd.DataFrame,
                 trades.append({k: v for k, v in open_trade.items()
                                if not k.startswith('_')})
                 open_trade, qa, qb, cur = None, 0.0, 0.0, 0
-            # Open the new position, unless the hedge ratio is degenerate.
-            if tgt != 0:
+            # Open the new position, unless the hedge ratio is degenerate or
+            # this is the final bar (a same-bar open+force-close round trip
+            # could never exist and would only pollute the trade statistics).
+            if tgt != 0 and t < n - 1:
                 bt_ = beta_exec[t]
                 if not np.isfinite(bt_) or not (cfg.min_beta <= bt_ <= cfg.max_beta):
                     skipped += 1

@@ -25,11 +25,12 @@ def annualized_sharpe(returns: pd.Series, periods_per_year: int) -> float:
 
 
 def annualized_sortino(returns: pd.Series, periods_per_year: int) -> float:
+    """Sortino with the standard target-downside deviation: the denominator
+    averages squared below-target (0) returns over *all* observations."""
     r = returns.to_numpy(float)
-    downside = r[r < 0]
-    if len(downside) < 2:
+    if len(r) < 3 or (r < 0).sum() < 2:
         return float('nan')
-    dd = math.sqrt((downside ** 2).mean())
+    dd = math.sqrt((np.minimum(r, 0.0) ** 2).mean())
     if dd == 0:
         return float('nan')
     return float(r.mean() / dd * math.sqrt(periods_per_year))
