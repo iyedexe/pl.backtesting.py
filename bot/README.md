@@ -43,14 +43,15 @@ Setup
 1. **Create the Telegram bot**: talk to [@BotFather](https://t.me/botfather),
    `/newbot`, and keep the token. Message your new bot once, then get your
    chat id, e.g. from `https://api.telegram.org/bot<TOKEN>/getUpdates`.
-2. **Install and test** (Python ≥ 3.10):
+2. **Install and test** — the repo is a [uv](https://docs.astral.sh/uv/)
+   workspace and the bot is a member of it, so uv provisions Python and the
+   locked dependencies on first run:
 
        cd bot
-       pip install -r requirements.txt
-       python -m inclusion_bot selftest                 # offline demo cycle
+       uv run inclusion-bot selftest                 # offline demo cycle
        export TELEGRAM_BOT_TOKEN=... TELEGRAM_CHAT_ID=...
-       python -m inclusion_bot test-telegram            # "✅ connected"
-       python -m inclusion_bot scan --dry-run           # full scan, printed only
+       uv run inclusion-bot test-telegram            # "✅ connected"
+       uv run inclusion-bot scan --dry-run           # full scan, printed only
 
 3. **Schedule one scan per weekday after the US close** (22:15 UTC covers all
    four indices) — via `deploy/crontab.example`, a systemd timer, or the
@@ -106,9 +107,9 @@ Development
 
 Pure logic (calendars, screener, state machine, formatting) is fully covered
 by offline tests with fixture data — including checks against real historical
-review dates:
+review dates. From the repo root:
 
-    python -m unittest discover -s bot/tests -v
+    uv run --package inclusion-bot python -m unittest discover -s bot/tests -v
 
 The data layer funnels through two cached functions so everything else stays
 testable without network access.

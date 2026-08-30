@@ -9,12 +9,14 @@ env:
 jobs:
   lint:
     runs-on: ubuntu-latest
-    timeout-minutes: 1
+    timeout-minutes: 2
     steps:
       - uses: actions/checkout@v4
-      - run: pip install flake8 mypy
-      - run: flake8 backtesting setup.py
-      - run: mypy --no-warn-unused-ignores backtesting
+      - uses: astral-sh/setup-uv@v6
+        with: { enable-cache: true }
+      - run: uv lock --check
+      - run: uvx flake8 backtesting bot
+      - run: uvx mypy --no-warn-unused-ignores backtesting
 
   coverage:
     needs: lint
@@ -22,13 +24,15 @@ jobs:
     timeout-minutes: 4
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.10'
-      - run: pip install -U --pre bokeh pandas numpy coverage && pip install -U .[test]
+      - uses: astral-sh/setup-uv@v6
+        with: { enable-cache: true }
+      - run: uv sync --python 3.10 --extra test --extra dev
+      # Test against pre-release versions of the heavy dependencies
+      # (out-of-lock on purpose, hence --no-sync below)
+      - run: uv pip install --prerelease allow -U bokeh pandas numpy
       - env: { BOKEH_BROWSER: none }
-        run: time coverage run -m backtesting.test
-      - run: coverage combine && coverage report
+        run: time uv run --no-sync coverage run -m backtesting.test
+      - run: uv run --no-sync coverage combine && uv run --no-sync coverage report
 
   build:
     needs: lint
@@ -36,20 +40,31 @@ jobs:
     timeout-minutes: 3
     strategy:
       matrix:
-        python-version: [3.12, 3.13]
+        python-version: ['3.12', '3.13']
         experimental: [false]
         include:
-          - python-version: '3.*'
+          - python-version: '3'  # whatever the latest stable is
             experimental: true
     continue-on-error: ${{ matrix.experimental }}
     steps:
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
       - uses: actions/checkout@v4
-      - run: pip install -U .[test]
+      - uses: astral-sh/setup-uv@v6
+        with: { enable-cache: true }
+      - run: uv sync --python ${{ matrix.python-version }} --extra test
       - env: { BOKEH_BROWSER: none }
-        run: time python -m backtesting.test
+        run: time uv run python -m backtesting.test
+
+  bot:
+    needs: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with: { enable-cache: true }
+      - run: uv sync --package inclusion-bot
+      - run: uv run --package inclusion-bot python -m unittest discover -s bot/tests -v
+      - run: uv run --package inclusion-bot inclusion-bot selftest
 
   docs:
     needs: lint
@@ -60,8 +75,10 @@ jobs:
         with:
           fetch-depth: 3
       - run: git fetch --depth=1 origin +refs/tags/*:refs/tags/*
-      - run: pip install -e .[doc,test]  # -e provides ./backtesting/_version.py for pdoc
-      - run: time doc/build.sh
+      - uses: astral-sh/setup-uv@v6
+        with: { enable-cache: true }
+      - run: uv sync --python 3.12 --extra doc --extra test  # installs project editable, provides ./backtesting/_version.py for pdoc
+      - run: time uv run doc/build.sh
 
   win64:
     needs:
@@ -71,9 +88,8 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: 3.13
-      - run: pip install .[test]
+      - uses: astral-sh/setup-uv@v6
+        with: { enable-cache: true }
+      - run: uv sync --python 3.13 --extra test
       - env: { BOKEH_BROWSER: none }
-        run: python -m backtesting.test
+        run: uv run python -m backtesting.test

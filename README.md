@@ -22,6 +22,10 @@ Installation
 
     $ pip install backtesting
 
+or, in a [uv](https://docs.astral.sh/uv/)-managed project:
+
+    $ uv add backtesting
+
 
 Usage
 -----

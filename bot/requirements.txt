@@ -1,5 +1,0 @@
-pandas >= 2.0
-numpy >= 1.24
-requests >= 2.31
-yfinance >= 0.2.40
-lxml >= 4.9          # pandas.read_html backend for the Wikipedia tables

@@ -19,10 +19,9 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: astral-sh/setup-uv@v6
         with:
-          python-version: '3.12'
-      - run: pip install -r bot/requirements.txt
+          enable-cache: true
       - name: Restore bot state
         uses: actions/cache/restore@v4
         with:
@@ -34,7 +33,7 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python -m inclusion_bot scan
+        run: uv run inclusion-bot scan
       - name: Save bot state
         if: always()
         uses: actions/cache/save@v4

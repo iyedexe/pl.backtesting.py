@@ -9,6 +9,12 @@ These were the major changes contributing to each release:
   index additions ahead of announcement (the "index effect")
 * New `bot/`: a Telegram signal bot applying the index-inclusion strategy
   to live data for the S&P 500, Nasdaq-100, FTSE 100 and DAX 40
+* The project is now managed with [uv](https://docs.astral.sh/uv/):
+  PEP 621 `pyproject.toml` replaces `setup.py`, `bot/` is a workspace
+  member, dependencies are pinned in a committed `uv.lock`, and CI runs
+  on uv
+* Bugfix: `FractionalBacktest` failed rescaling overlay indicators backed
+  by read-only arrays (as produced under pandas ≥ 3.0 copy-on-write)
 
 ### 0.6.5
 (2025-07-30)
