@@ -85,7 +85,7 @@ def _write(df: pd.DataFrame, name: str, manifest: dict, source: str, src_dir: Pa
     manifest[name] = {
         'source': source,
         'source_commit': _git_sha(src_dir),
-        'rows': int(len(df)),
+        'rows': len(df),
         'columns': list(df.columns),
         'start': str(df.index.min().date()),
         'end': str(df.index.max().date()),
@@ -141,6 +141,7 @@ def build_fx(src: Path, manifest: dict):
 
 def build_commodities(src: Path, manifest: dict):
     print('commodities (EIA spot prices, datahub mirrors):')
+
     def read_one(path, name):
         df = pd.read_csv(path, parse_dates=['Date'])
         return df.set_index('Date').iloc[:, 0].rename(name)

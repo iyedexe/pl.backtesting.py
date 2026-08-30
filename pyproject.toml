@@ -128,9 +128,13 @@ select = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-# The research CLI and scripts intentionally print to the console
+# The research CLI and scripts intentionally print to the console;
+# report/figure text intentionally uses Greek letters (α, β, σ, δ).
 'pairs_trading/cli.py' = ['T201']
 'scripts/*' = ['T201']
+'pairs_trading/report.py' = ['RUF001']
+'pairs_trading/experiments.py' = ['RUF001', 'T201']
+'pairs_trading/plotting.py' = ['RUF001']
 
 [tool.ruff.lint.pep8-naming]
 ignore-names = [
