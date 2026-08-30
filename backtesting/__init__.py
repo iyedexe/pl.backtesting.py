@@ -74,7 +74,13 @@ from .backtesting import Backtest, Strategy  # noqa: F401
 # Add overridable backtesting.Pool used for parallel optimization
 def Pool(processes=None, initializer=None, initargs=()):
     import multiprocessing as mp
-    if mp.get_start_method() == 'spawn':
+    if 'fork' in mp.get_all_start_methods():
+        # Python 3.14 changed the default start method on POSIX from 'fork'
+        # to 'forkserver', which, like 'spawn', pickles the worker state and
+        # thus can't handle strategy classes defined in scripts/notebooks;
+        # explicitly keep to 'fork' where the platform provides it.
+        return mp.get_context('fork').Pool(processes, initializer, initargs)
+    else:
         import warnings
         warnings.warn(
             "If you want to use multi-process optimization with "
@@ -87,5 +93,3 @@ def Pool(processes=None, initializer=None, initargs=()):
             category=RuntimeWarning, stacklevel=3)
         from multiprocessing.dummy import Pool
         return Pool(processes, initializer, initargs)
-    else:
-        return mp.Pool(processes, initializer, initargs)
