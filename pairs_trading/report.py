@@ -25,6 +25,61 @@ commodities, and cross-asset pairs**, with the estimation discipline the
 literature demands (walk-forward everything, next-close execution, explicit
 costs).
 
+## Findings at a glance
+
+*(Numbers refer to the vendored data snapshot; regenerate them with
+`uv run pairs all`.)*
+
+1. **Out-of-sample discipline eliminates most of the strategy.** Once the
+   hedge ratio, z-parameters and the cointegration test itself are estimated
+   only on formation windows, the gate opens on just 4–12% of windows for
+   famous pairs in stocks, FX and crypto — indistinguishable from the 5%
+   false-positive base rate of the test (Clegg 2014, replicated below in the
+   persistence tables: P(pass next | pass now) mostly ≤ 50%). V/MA, one of
+   the most correlated pairs in the S&P 500, never passes at all —
+   correlation is not cointegration.
+2. **The one relationship that genuinely survives is the oil complex.**
+   WTI/Brent: Sharpe 0.39, Newey-West t = 3.3, 79 round trips over 35 years,
+   +94 bp per trade against a ~20 bp cost hurdle, deflated-Sharpe probability
+   **0.97** across the threshold grid, and graceful cost decay (Sharpe 0.27
+   at 4× base costs). Its gate persistence (58% conditional re-pass) is the
+   only one meaningfully above base rate — and the gate timeline shows it
+   trading mostly *before* the 2011 Cushing dislocation, exactly where the
+   literature places the structural break.
+3. **GGR's "wait one day" reproduced.** Executing on the signal close instead
+   of the next close roughly doubles WTI/Brent's Sharpe (0.81 vs 0.39; CAGR
+   4.84% vs 2.07%): more than half of the apparent edge at daily frequency is
+   bid-ask bounce you cannot collect.
+4. **Daily crypto pairs lose money even before costs.** BTC/ETH walk-forward
+   Sharpe −0.50 (−0.47 at zero cost); the top-3 re-selected portfolio ends at
+   Sharpe −0.60 with CAGR −23.9% and a 94.8% drawdown, with busted slots in
+   the 2017 and 2020-21 alt manias — the daily-frequency half of the Fil &
+   Kristoufek (2020) result, plus divergence risk in its most violent form.
+   A rolling-z stop is no protection there: when the spread trends, its own
+   σ expands with it, so the 4σ stop never fires (LTC/ETH's −61% trade ran
+   55 days to the window time-stop).
+5. **US equity pairs are arbitraged flat.** The top-10 S&P 500 portfolio,
+   re-selected every quarter from 505 names, nets Sharpe 0.02 (CAGR 0.0%,
+   max DD 1.0%) after 5 bp/side — the Do & Faff (2010/2012) decay, exactly.
+   Twenty years of JPM/BAC gives Sharpe 0.18 with 11 trades.
+6. **Cross-asset links are real but thin.** The petro-currency pair CAD/WTI
+   earns Sharpe 0.23 (t = 1.7, 68% win rate) but dies at 4× costs; BTC/PAXG
+   ("digital gold") is firmly negative — Bitcoin does not trade like gold.
+7. **The gate buys tails, not Sharpe.** Removing it leaves headline Sharpe
+   similar (WTI/Brent 0.42 vs 0.39) but multiplies drawdowns ~3.5×
+   (30% vs 9%) and trade counts ~3×: the cointegration filter is a risk
+   control more than an alpha source.
+8. **Estimator choice is second-order next to regime.** The continuous
+   Kalman hedge keeps pairs tradable in far more windows (64% vs 30% for
+   WTI/Brent; 59 vs 3 trades on LTC/ETH) with similar per-year returns but
+   deeper drawdowns — adaptivity extends the opportunity set, it does not
+   manufacture mean reversion.
+9. **Nothing here clears the t ≥ 3 bar except WTI/Brent** (t = 3.3, DSR
+   0.97). By Harvey-Liu-Zhu standards, every other configuration in this
+   study is statistically indistinguishable from noise once selection is
+   accounted for. That is the honest headline for daily-frequency pairs
+   trading in 2026.
+
 ## Methodology
 
 **Spread model.** For legs A and B we fit `ln A = α + β ln B + s` on a

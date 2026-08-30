@@ -1,0 +1,12 @@
+{
+  "study": "stocks",
+  "quick": false,
+  "ppy": 252,
+  "cost_bp": 5.0,
+  "panel_shape": [
+    1259,
+    505
+  ],
+  "start": "2013-02-08",
+  "end": "2018-02-07"
+}
