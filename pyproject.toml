@@ -1,10 +1,107 @@
+[build-system]
+requires = ["setuptools>=64", "setuptools-scm>=8"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "backtesting"
+description = "Backtest trading strategies in Python (fork with a pairs-trading research lab)"
+readme = "README.md"
+license = { text = "AGPL-3.0" }
+requires-python = ">=3.10"
+dynamic = ["version"]
+authors = [{ name = "Zach Lûster" }]
+keywords = [
+    "algo", "algorithmic", "backtest", "backtesting", "bitcoin", "bokeh",
+    "cointegration", "commodities", "crypto", "currency", "equity", "etf",
+    "finance", "financial", "forex", "futures", "fx", "gold", "hedge",
+    "invest", "investing", "investment", "market", "mean-reversion", "ohlc",
+    "ohlcv", "pairs-trading", "quant", "quantitative", "silver", "spread",
+    "statistical-arbitrage", "stocks", "strategy", "trading",
+]
+classifiers = [
+    "Intended Audience :: Financial and Insurance Industry",
+    "Intended Audience :: Science/Research",
+    "Framework :: Jupyter",
+    "License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Office/Business :: Financial :: Investment",
+    "Topic :: Scientific/Engineering :: Visualization",
+]
+dependencies = [
+    # Core backtesting library
+    "numpy >= 1.17.0",
+    "pandas >= 1.3.0",
+    "bokeh >= 3.0.0, != 3.2.*",
+    # Pairs-trading research lab
+    "scipy >= 1.10",
+    "statsmodels >= 0.14",
+    "matplotlib >= 3.7",
+    "tabulate >= 0.9",
+]
+
+[project.urls]
+Documentation = "https://kernc.github.io/backtesting.py/doc/backtesting/"
+Source = "https://github.com/iyedexe/pl.backtesting.py/"
+Upstream = "https://github.com/kernc/backtesting.py/"
+
+[project.scripts]
+pairs = "pairs_trading.cli:main"
+
+[project.optional-dependencies]
+doc = [
+    "pdoc3",
+    "jupytext >= 1.3",
+    "nbconvert",
+    "ipykernel",       # for nbconvert
+    "jupyter_client",  # for nbconvert
+]
+test = [
+    "matplotlib",
+    "scikit-learn",
+    "sambo",
+    "tqdm",
+    "ipywidgets",  # for tqdm
+]
+
+[dependency-groups]
+dev = [
+    "ruff >= 0.6",
+    "flake8",
+    "coverage",
+    "mypy",
+    "pytest >= 8",
+]
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+include = ["backtesting*", "pairs_trading*"]
+
+[tool.setuptools.package-data]
+backtesting = ["*.js", "test/*.csv"]
+pairs_trading = ["py.typed"]
+
+[tool.setuptools_scm]
+version_file = "backtesting/_version.py"
+fallback_version = "0.6.5.post1"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
 [tool.ruff]
+line-length = 100
 exclude = [
     '.git',
     '.eggs',
+    '.venv',
     '__pycache__',
     'doc/examples',
 ]
+
+[tool.ruff.lint]
 ignore = [
     'UP006',
     'UP007',
@@ -16,7 +113,6 @@ ignore = [
     'B011',
     'RUF002',
 ]
-line-length = 100
 select = [
     'I',
     'E',
@@ -31,7 +127,12 @@ select = [
     'YTT',
 ]
 
-[tool.ruff.pep8-naming]
+[tool.ruff.lint.per-file-ignores]
+# The research CLI and scripts intentionally print to the console
+'pairs_trading/cli.py' = ['T201']
+'scripts/*' = ['T201']
+
+[tool.ruff.lint.pep8-naming]
 ignore-names = [
     'l',
     'h',

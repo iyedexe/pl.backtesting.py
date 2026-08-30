@@ -9,71 +9,84 @@ env:
 jobs:
   lint:
     runs-on: ubuntu-latest
-    timeout-minutes: 1
+    timeout-minutes: 3
     steps:
       - uses: actions/checkout@v4
-      - run: pip install flake8 mypy
-      - run: flake8 backtesting setup.py
-      - run: mypy --no-warn-unused-ignores backtesting
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --locked
+      - run: uv run flake8 backtesting pairs_trading
+      - run: uv run ruff check backtesting pairs_trading scripts tests
+      - run: uv run mypy --no-warn-unused-ignores backtesting
 
   coverage:
     needs: lint
     runs-on: ubuntu-latest
-    timeout-minutes: 4
+    timeout-minutes: 6
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: astral-sh/setup-uv@v5
         with:
-          python-version: '3.10'
-      - run: pip install -U --pre bokeh pandas numpy coverage && pip install -U .[test]
+          python-version: '3.11'
+      - run: uv sync --locked --extra test
       - env: { BOKEH_BROWSER: none }
-        run: time coverage run -m backtesting.test
-      - run: coverage combine && coverage report
+        run: time uv run coverage run -m backtesting.test
+      - run: uv run coverage combine && uv run coverage report
 
   build:
     needs: lint
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 5
     strategy:
       matrix:
-        python-version: [3.12, 3.13]
-        experimental: [false]
-        include:
-          - python-version: '3.*'
-            experimental: true
-    continue-on-error: ${{ matrix.experimental }}
+        python-version: ['3.12', '3.13']
     steps:
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
         with:
           python-version: ${{ matrix.python-version }}
-      - uses: actions/checkout@v4
-      - run: pip install -U .[test]
+      - run: uv sync --locked --extra test
       - env: { BOKEH_BROWSER: none }
-        run: time python -m backtesting.test
+        run: time uv run python -m backtesting.test
+
+  research:
+    needs: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: '3.11'
+      - run: uv sync --locked
+      - run: uv run pytest tests
+      # Smoke-run one small end-to-end experiment on the vendored data
+      - run: uv run pairs run --study commodities --quick
 
   docs:
     needs: lint
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 3
-      - run: git fetch --depth=1 origin +refs/tags/*:refs/tags/*
-      - run: pip install -e .[doc,test]  # -e provides ./backtesting/_version.py for pdoc
-      - run: time doc/build.sh
+      - run: git fetch --depth=1 origin +refs/tags/*:refs/tags/* || true
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: '3.11'
+      - run: uv sync --locked --extra doc --extra test
+      - run: time uv run doc/build.sh
 
   win64:
     needs:
       - build
-      - docs
     runs-on: windows-latest
-    timeout-minutes: 5
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: astral-sh/setup-uv@v5
         with:
-          python-version: 3.13
-      - run: pip install .[test]
+          python-version: '3.13'
+      - run: uv sync --locked --extra test
       - env: { BOKEH_BROWSER: none }
-        run: python -m backtesting.test
+        run: uv run python -m backtesting.test

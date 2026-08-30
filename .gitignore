@@ -3,6 +3,13 @@
 *.png
 _version.py
 
+# Generated research artifacts ARE committed
+!research/reports/**/*.png
+!research/reports/**/*.html
+
+# Local research scratch
+research/data/raw/
+
 *.egg-info
 .eggs/*
 __pycache__/*
