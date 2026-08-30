@@ -16,6 +16,17 @@ stretched, bet on convergence — backtested with walk-forward discipline on
 **→ The full write-up with all tables and figures is in
 [`research/reports/report.md`](research/reports/report.md).**
 
+Headline out-of-sample findings (details and caveats in the report): with
+walk-forward estimation, next-close execution and realistic costs, **the only
+pair that clears a t ≥ 3 / deflated-Sharpe bar is WTI/Brent** (Sharpe 0.39,
+NW t = 3.3, +94 bp per round trip over 35 years, mostly pre-2011); famous
+stock/FX/crypto pairs pass the formation-window cointegration gate at roughly
+the test's 5% false-positive base rate (Clegg 2014, replicated); daily crypto
+pairs lose money even before costs, with short-leg blowups as the dominant
+risk; the top-10 S&P 500 pair portfolio nets a Sharpe of 0.02 (the Do & Faff
+decay); and same-close execution roughly doubles measured Sharpe — the GGR
+"wait one day" bounce artifact, reproduced.
+
 The repository is a fork of [kernc/backtesting.py](https://github.com/kernc/backtesting.py)
 extended with a `pairs_trading` package; the bundled `backtesting` library is
 kept fully working (its own test suite passes) and is used as an independent
