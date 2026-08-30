@@ -130,12 +130,18 @@ pmcc/
 
 ## Reproduce
 
+The repo is [uv](https://docs.astral.sh/uv/)-managed — `uv.lock` pins the
+exact environment these results were produced with:
+
 ```bash
-pip install numpy pandas matplotlib tabulate
-python -m pmcc.test_pmcc                   # unit tests
-python -m pmcc.run_backtest all            # ~10 min on 4 cores; writes pmcc/results/
-python -m pmcc.live.run_live --ticker MC.PA --broker paper   # dry-run the executor
+uv sync --extra pmcc                       # or: pip install -e '.[pmcc]'
+uv run python -m pmcc.test_pmcc            # unit tests
+uv run python -m pmcc.run_backtest all     # ~10 min on 4 cores; writes pmcc/results/
+uv run python -m pmcc.live.run_live --ticker MC.PA --broker paper   # dry-run the executor
 ```
+
+Optional extras: `pmcc-fetch` (yfinance, to extend the dataset locally) and
+`pmcc-live` (ib_insync, for the Interactive Brokers adapter skeleton).
 
 Key knobs (see `PMCCParams` / `Engine`): `short_target_delta` (0.25),
 `leaps_target_delta` (0.80), `leaps_open_min_dte` (540 — 720 tested slightly

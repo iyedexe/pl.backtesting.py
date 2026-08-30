@@ -21,7 +21,7 @@ import pandas as pd
 
 from . import data as datamod
 from .pricing import OptionSpec
-from .strategy import (MULT, Action, MarketView, OptionPosition, OptionTrade,
+from .strategy import (MULT, MarketView, OptionPosition, OptionTrade,
                        Portfolio, StockTrade)
 from .vol import VolSurface, longrun_vol, realized_vol
 

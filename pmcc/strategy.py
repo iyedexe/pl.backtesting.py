@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import datetime as dt
 import math
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 
 from .pricing import (OptionSpec, bs_delta, bs_price, next_expiry_with_dte,
                       snap_strike, strike_for_delta)

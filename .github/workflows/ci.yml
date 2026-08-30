@@ -13,7 +13,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: pip install flake8 mypy
-      - run: flake8 backtesting setup.py
+      - run: flake8 backtesting pmcc
       - run: mypy --no-warn-unused-ignores backtesting
 
   coverage:

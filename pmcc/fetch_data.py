@@ -21,8 +21,6 @@ from __future__ import annotations
 import argparse
 import os
 
-import pandas as pd
-
 from .data import DATA_DIR, UNIVERSE
 
 

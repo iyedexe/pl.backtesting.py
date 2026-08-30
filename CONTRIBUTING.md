@@ -47,7 +47,12 @@ first [fork the project]. Then:
 
     git clone git@github.com:YOUR_USERNAME/backtesting.py
     cd backtesting.py
-    pip install -e '.[doc,test,dev]'
+    uv sync --extra doc --extra test --extra dev
+
+This project is [uv]-managed (`pyproject.toml` + `uv.lock`); run tools with
+`uv run <cmd>`. Plain pip still works too: `pip install -e '.[doc,test,dev]'`.
+
+[uv]: https://docs.astral.sh/uv/
 
 [fork the project]: https://help.github.com/articles/fork-a-repo/
 

@@ -17,6 +17,10 @@ Backtest trading strategies with Python.
 > large caps with synthetic option pricing, benchmarks, an 800-run sensitivity
 > grid, and a paper-trading execution scaffold. See
 > [`pmcc/README.md`](pmcc/README.md) for methodology, results and the verdict.
+>
+> The fork is [uv](https://docs.astral.sh/uv/)-managed: `uv sync --extra test
+> --extra pmcc` creates the pinned environment from `uv.lock`, then e.g.
+> `uv run python -m pmcc.run_backtest all`.
 
 [**Project website**](https://kernc.github.io/backtesting.py) + [Documentation] &nbsp;&nbsp;|&nbsp; [YouTube]
 

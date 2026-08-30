@@ -16,7 +16,6 @@ import os
 import sys
 from concurrent.futures import ProcessPoolExecutor
 
-import numpy as np
 import pandas as pd
 
 from . import data as datamod

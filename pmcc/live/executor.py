@@ -19,15 +19,12 @@ Safety rails (all enforced here, not in the strategy):
 from __future__ import annotations
 
 import datetime as dt
-import math
 import os
 
-import numpy as np
 import pandas as pd
 
 from .. import data as datamod
-from ..pricing import OptionSpec
-from ..strategy import (MULT, MarketView, OptionPosition, OptionTrade,
+from ..strategy import (MarketView, OptionPosition, OptionTrade,
                         Portfolio, StockTrade)
 from ..vol import VolSurface, longrun_vol, realized_vol
 from .brokers import Broker
