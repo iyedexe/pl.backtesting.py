@@ -130,8 +130,9 @@ pmcc/
 
 ## Reproduce
 
-The repo is [uv](https://docs.astral.sh/uv/)-managed — `uv.lock` pins the
-exact environment these results were produced with:
+The repo is [uv](https://docs.astral.sh/uv/)-managed and targets Python ≥ 3.13
+— `uv.lock` pins the exact environment these results were produced with
+(uv fetches the interpreter automatically if needed):
 
 ```bash
 uv sync --extra pmcc                       # or: pip install -e '.[pmcc]'
