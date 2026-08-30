@@ -18,9 +18,9 @@ import pandas as pd
 from .config import EngineConfig, SignalConfig, WalkForwardConfig
 from .engine import TRADE_COLUMNS, backtest_pair
 from .signals import generate_signals, zscore, zscore_frozen
-from .stats import KalmanHedge, engle_granger, half_life, ols_hedge
+from .stats import KalmanHedge, adf_pvalue, engle_granger, half_life, ols_hedge
 
-WINDOW_COLUMNS = ['start', 'end', 'eg_pvalue', 'half_life', 'beta', 'traded',
+WINDOW_COLUMNS = ['start', 'end', 'gate_pvalue', 'half_life', 'beta', 'traded',
                   'reject_reason', 'n_trades', 'window_return']
 
 
@@ -38,36 +38,64 @@ class WalkForwardResult:
         return float(self.windows['traded'].mean()) if len(self.windows) else float('nan')
 
 
+def kalman_state_paths(la: pd.Series, lb: pd.Series,
+                       init_bars: int, delta: float):
+    """One continuous, causal Kalman pass over the full pair history.
+
+    The state is initialized from an OLS fit on the first ``init_bars``
+    (which the walk-forward never trades — they are formation-only), then the
+    filter runs once over everything. The hedge ratio at *t* therefore uses
+    information up to *t* only. The tradable spread is ``la - beta_t * lb``
+    with **no intercept in the state**: a random-walk alpha would absorb the
+    very mean reversion the strategy trades (Kalman innovations are ~white by
+    construction), and any constant level is removed by the z-score's own
+    mean. Restarting the filter every window would be wrong for a slow
+    ``delta`` (it could never converge from a diffuse prior); continuity is
+    the point of the filter.
+    """
+    alpha0, beta0 = ols_hedge(la.iloc[:init_bars], lb.iloc[:init_bars])
+    kf = KalmanHedge(delta=delta, beta0=beta0, alpha0=alpha0, p0=1e-4)
+    hist = kf.filter(la, lb)
+    beta_path = hist['beta']
+    spread_path = la - beta_path * lb
+    return beta_path, spread_path
+
+
 def _window_signals(la: pd.Series, lb: pd.Series, form: slice, trade: slice,
-                    sig_cfg: SignalConfig, wf_cfg: WalkForwardConfig):
-    """Compute (side, beta_series, reasons, diag) for one window, causally."""
+                    sig_cfg: SignalConfig, wf_cfg: WalkForwardConfig,
+                    kalman_paths=None):
+    """Compute (side, beta_series, diag) for one window, causally."""
     la_f, lb_f = la.iloc[form], lb.iloc[form]
     diag: dict = {}
+    n_form = len(la_f)
     if wf_cfg.use_kalman:
-        kf = KalmanHedge()
-        # Warm-start the filter on the formation window (past data), then keep
-        # filtering causally through the trading window.
-        hist = kf.filter(pd.concat([la_f, la.iloc[trade]]),
-                         pd.concat([lb_f, lb.iloc[trade]]))
-        beta_series = hist['beta']
-        # The innovation (one-step-ahead prediction error) is the causal spread.
-        spread_all = hist['resid']
-        alpha, beta = float(hist['alpha'].iloc[len(la_f) - 1]), \
-            float(beta_series.iloc[len(la_f) - 1])
+        if kalman_paths is None:
+            kalman_paths = kalman_state_paths(la, lb, n_form, wf_cfg.kalman_delta)
+        beta_path, spread_path = kalman_paths
+        beta_series = beta_path.iloc[trade]
+        beta = float(beta_path.iloc[form].iloc[-1])
+        spread_all = pd.concat([spread_path.iloc[form], spread_path.iloc[trade]])
+        diag['beta'] = beta
+        spread_f = spread_all.iloc[:n_form]
+        diag['half_life'] = half_life(spread_f)
+        # Gate on the spread this variant actually trades: ADF on the filtered
+        # formation spread (slightly liberal: plain ADF critical values on a
+        # spread with an estimated hedge ratio).
+        diag['pvalue'] = adf_pvalue(spread_f)
     else:
         alpha, beta = ols_hedge(la_f, lb_f)
         beta_series = pd.Series(beta, index=la.index[trade])
         spread_all = pd.concat([la_f, la.iloc[trade]]) - alpha - beta * \
             pd.concat([lb_f, lb.iloc[trade]])
-    diag['beta'] = beta
-    spread_f = spread_all.iloc[:len(la_f)]
-    diag['half_life'] = half_life(spread_f)
+        diag['beta'] = beta
+        spread_f = spread_all.iloc[:n_form]
+        diag['half_life'] = half_life(spread_f)
     if wf_cfg.z_mode == 'frozen':
         z_all = zscore_frozen(spread_all, float(spread_f.mean()),
                               float(spread_f.std(ddof=1)))
     else:
         z_all = zscore(spread_all, sig_cfg.z_window)
-    z_trade = z_all.iloc[len(la_f):]
+    z_trade = z_all.iloc[n_form:]
     sigs = generate_signals(z_trade, sig_cfg)
     return sigs, beta_series, diag
 
@@ -91,6 +119,9 @@ def walk_forward_pair(prices: pd.DataFrame,
     all_returns: list[pd.Series] = []
     all_trades: list[pd.DataFrame] = []
     window_rows: list[dict] = []
+    kalman_paths = (kalman_state_paths(la, lb, wf_cfg.formation,
+                                       wf_cfg.kalman_delta)
+                    if wf_cfg.use_kalman else None)
 
     for start in range(wf_cfg.formation, n, wf_cfg.trading):
         end = min(start + wf_cfg.trading, n)
@@ -101,16 +132,21 @@ def walk_forward_pair(prices: pd.DataFrame,
         idx_trade = prices.index[trade]
         row: dict = {'start': idx_trade[0], 'end': idx_trade[-1]}
 
-        eg = engle_granger(prices['a'].iloc[form], prices['b'].iloc[form],
-                           try_both_orientations=False)
-        row['eg_pvalue'] = eg.pvalue
-        sigs, beta_series, diag = _window_signals(la, lb, form, trade, sig_cfg, wf_cfg)
+        sigs, beta_series, diag = _window_signals(la, lb, form, trade, sig_cfg,
+                                                  wf_cfg, kalman_paths)
+        if 'pvalue' in diag:                      # Kalman: ADF on filtered spread
+            gate_p = diag['pvalue']
+        else:                                     # static hedge: Engle-Granger
+            eg = engle_granger(prices['a'].iloc[form], prices['b'].iloc[form],
+                               try_both_orientations=False)
+            gate_p = eg.pvalue
+        row['gate_pvalue'] = gate_p
         row['half_life'] = hl = diag['half_life']
         row['beta'] = beta = diag['beta']
 
         reject = ''
         if wf_cfg.gate:
-            if eg.pvalue > wf_cfg.coint_pvalue_gate:
+            if gate_p > wf_cfg.coint_pvalue_gate:
                 reject = 'coint'
             elif not (wf_cfg.min_half_life <= hl <= wf_cfg.max_half_life):
                 reject = 'half_life'
@@ -206,7 +242,7 @@ def walk_forward_portfolio(panel: pd.DataFrame,
             rets = pd.Series(0.0, index=idx_trade)
         window_rows.append({
             'start': idx_trade[0], 'end': idx_trade[-1],
-            'eg_pvalue': float(chosen['eg_pvalue'].median()) if len(chosen) else np.nan,
+            'gate_pvalue': float(chosen['eg_pvalue'].median()) if len(chosen) else np.nan,
             'half_life': float(chosen['half_life'].median()) if len(chosen) else np.nan,
             'beta': np.nan, 'traded': bool(len(chosen)),
             'reject_reason': '' if len(chosen) else 'no_pairs',

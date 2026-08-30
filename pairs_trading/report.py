@@ -50,9 +50,12 @@ A against `βN` dollars of B (dollar-neutral in the β-weighted sense, gross =
 "wait one day"; a lag-0 variant quantifies the bounce subsidy), and charges a
 per-side proportional cost on every leg's traded notional — 12 bp (crypto),
 5 bp (stocks), 2 bp (forex), 5 bp (commodities spot proxies) per side, with
-0×/0.5×/2×/4× sweeps. Hedge variants: rolling-OLS (default), formation-frozen,
-and a Kalman filter with random-walk (α, β) state (δ = 1e-4, Vₑ = 1e-3, the
-E. Chan 2013 reference settings).
+0×/0.5×/2×/4× sweeps. Hedge variants: formation-window OLS (default) and a
+Kalman filter with random-walk state (Vₑ = 1e-3 after E. Chan 2013) supplying
+the *hedge-ratio path* β_t, with δ = 1e-5 and the intercept frozen per window —
+a deliberately slower drift than Chan's δ = 1e-4, because a fully adaptive
+(α, β) state whitens its own innovations and absorbs exactly the mean
+reversion the strategy trades.
 
 **Statistics.** Sharpe annualized at 252 (365 for crypto) periods; Newey-West
 HAC t-statistics on mean daily returns (automatic lag rule); the threshold

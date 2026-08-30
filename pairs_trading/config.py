@@ -49,6 +49,9 @@ class WalkForwardConfig:
     min_half_life: float = 1.0        # bars; reject near-instant mean reversion (noise)
     max_half_life: float = 60.0       # bars; reject glacial mean reversion
     use_kalman: bool = False          # dynamic hedge ratio instead of formation OLS
+    # State drift/bar for the Kalman hedge; far slower than Chan's 1e-4 because we
+    # filter *log* prices — larger deltas let beta-noise x log-price swamp the spread.
+    kalman_delta: float = 1e-7
     gate: bool = True                 # apply the cointegration/half-life gate at all
     z_mode: str = 'rolling'           # 'rolling' (causal window) or 'frozen' (GGR-style)
 

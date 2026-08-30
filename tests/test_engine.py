@@ -173,3 +173,30 @@ def test_zscore_signal_engine_roundtrip_no_nan(coint_pair):
     assert res.equity.notna().all()
     assert res.returns.notna().all()
     assert len(res.trades) > 0
+
+
+def test_walk_forward_kalman_variant_trades(coint_pair):
+    wf = walk_forward_pair(coint_pair, SignalConfig(entry=1.5, z_window=30),
+                           EngineConfig(cost=CostModel(2.0)),
+                           WalkForwardConfig(formation=252, trading=63,
+                                             use_kalman=True),
+                           name='sim-kalman')
+    assert wf.gate_pass_rate > 0.4
+    assert len(wf.trades) > 10
+    assert wf.equity.iloc[-1] > 0.9   # comparable to OLS on a static-beta pair
+
+
+def test_kalman_keeps_trading_through_beta_drift():
+    # Under hedge-ratio drift the static-EG gate shuts; the continuous Kalman
+    # filter keeps tracking and its gate stays open substantially more often.
+    from conftest import simulate_drifting_beta_pair
+    pair = simulate_drifting_beta_pair(seed=3)
+    sig = SignalConfig(entry=1.5, z_window=30)
+    eng = EngineConfig(cost=CostModel(2.0))
+    wf_ols = walk_forward_pair(pair, sig, eng,
+                               WalkForwardConfig(formation=252, trading=63))
+    wf_kal = walk_forward_pair(pair, sig, eng,
+                               WalkForwardConfig(formation=252, trading=63,
+                                                 use_kalman=True))
+    assert wf_kal.gate_pass_rate > wf_ols.gate_pass_rate + 0.2
+    assert len(wf_kal.trades) > len(wf_ols.trades)

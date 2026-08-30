@@ -12,6 +12,7 @@ of "long spread" means long A / short beta-dollars of B.
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass
 
 import numpy as np
@@ -73,7 +74,11 @@ def engle_granger(price_a: pd.Series, price_b: pd.Series,
 
 def adf_pvalue(series: pd.Series) -> float:
     """Plain ADF p-value (constant, AIC lag selection) for a residual series."""
-    return float(adfuller(np.asarray(series, float), regression='c', autolag='AIC')[1])
+    with warnings.catch_warnings():
+        # statsmodels 0.15 warns about the future ADFullerResult return type
+        warnings.simplefilter('ignore', FutureWarning)
+        res = adfuller(np.asarray(series, float), regression='c', autolag='AIC')
+    return float(res[1])
 
 
 def half_life(spread: pd.Series) -> float:

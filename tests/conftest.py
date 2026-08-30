@@ -43,3 +43,15 @@ def coint_pair() -> pd.DataFrame:
 @pytest.fixture
 def independent_pair() -> pd.DataFrame:
     return simulate_independent_walks()
+
+
+def simulate_drifting_beta_pair(n: int = 2000, seed: int = 3, b0: float = 1.0,
+                                b1: float = 2.0) -> pd.DataFrame:
+    """Cointegrated pair whose hedge ratio drifts linearly from b0 to b1."""
+    rng = np.random.default_rng(seed)
+    log_b = np.log(50.0) + np.cumsum(rng.normal(0.0002, 0.012, n))
+    beta_path = np.linspace(b0, b1, n)
+    spread = simulate_ou(n, kappa=0.05, sigma=0.01, seed=seed + 7)
+    log_a = 0.2 + beta_path * log_b + spread
+    idx = pd.bdate_range('2015-01-01', periods=n)
+    return pd.DataFrame({'a': np.exp(log_a), 'b': np.exp(log_b)}, index=idx)
