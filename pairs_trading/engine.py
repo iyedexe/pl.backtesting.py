@@ -127,13 +127,31 @@ def backtest_pair(prices: pd.DataFrame,
                         'pnl_bp': 0.0, 'costs': cost, 'holding': 0, 'reason': '',
                         '_pa': a[t], '_pb': b[t], '_t0': t,
                     }
-        equity[t] = e
-        qa_arr[t], qb_arr[t], side_arr[t] = qa, qb, cur
         if e <= 0:
-            # Bankrupt: freeze the curve (leverage > 1 blowups).
-            equity[t:] = e
+            # Bust: the short leg gapped through the account (possible for a
+            # crypto pair even at leverage 1). Model limited liability of the
+            # capital slice: equity floors at exactly zero, the position is
+            # liquidated at this bar's close, and the curve stays dead. The
+            # trade ledger keeps the *uncapped* economics (reason 'bust').
+            if open_trade is not None:
+                gross_now = abs(qa) * a[t] + abs(qb) * b[t]
+                cost = rate * gross_now
+                pnl = (qa * (a[t] - open_trade['_pa'])
+                       + qb * (b[t] - open_trade['_pb'])
+                       - open_trade['costs'] - cost)
+                open_trade.update(
+                    exit_date=idx[t], pnl=pnl,
+                    pnl_bp=1e4 * pnl / open_trade['gross_entry'],
+                    costs=open_trade['costs'] + cost,
+                    holding=int(t - open_trade['_t0']), reason='bust')
+                trades.append({k: v for k, v in open_trade.items()
+                               if not k.startswith('_')})
+                open_trade, qa, qb, cur = None, 0.0, 0.0, 0
+            equity[t:] = 0.0
             qa_arr[t:], qb_arr[t:], side_arr[t:] = 0, 0, 0
             break
+        equity[t] = e
+        qa_arr[t], qb_arr[t], side_arr[t] = qa, qb, cur
 
     # Force-close anything still open on the final bar.
     if open_trade is not None:

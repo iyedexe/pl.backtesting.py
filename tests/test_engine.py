@@ -200,3 +200,16 @@ def test_kalman_keeps_trading_through_beta_drift():
                                                  use_kalman=True))
     assert wf_kal.gate_pass_rate > wf_ols.gate_pass_rate + 0.2
     assert len(wf_kal.trades) > len(wf_ols.trades)
+
+
+def test_short_leg_blowup_floors_equity_at_zero():
+    # Short leg quadruples: loss on 0.5$ short = 1.5 > total equity.
+    px = _prices([100, 100, 100, 100, 100], [50, 50, 200, 200, 200])
+    res = backtest_pair(px, _side([1, 1, 1, 1, 1], px.index), 1.0, NOCOST)
+    assert res.equity.iloc[2] == 0.0
+    assert (res.equity.iloc[2:] == 0.0).all()
+    assert (res.positions['side'].iloc[2:] == 0).all()
+    assert res.returns.notna().all()
+    assert res.trades.iloc[0]['reason'] == 'bust'
+    # ledger keeps the uncapped economics of the losing trade
+    assert res.trades.iloc[0]['pnl'] == pytest.approx(-1.5)

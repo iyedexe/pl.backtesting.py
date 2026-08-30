@@ -14,8 +14,9 @@ import pandas as pd
 
 from .config import SignalConfig
 
-#: Exit reasons recorded in the trades ledger.
-REASONS = ('converged', 'stopped', 'time', 'end')
+#: Exit reasons recorded in the trades ledger ('flip' and 'bust' are added by
+#: the engine: direct reversals and equity wipeouts respectively).
+REASONS = ('converged', 'stopped', 'time', 'end', 'flip', 'bust')
 
 
 def zscore(spread: pd.Series, window: int) -> pd.Series:
