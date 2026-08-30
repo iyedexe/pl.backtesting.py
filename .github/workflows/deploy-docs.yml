@@ -20,7 +20,7 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with: { enable-cache: true }
 
-      - run: uv sync --python 3.12 --extra doc --extra test
+      - run: uv sync --python 3.13 --extra doc --extra test
 
       - run: time uv run doc/build.sh
 

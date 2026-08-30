@@ -15,6 +15,12 @@ These were the major changes contributing to each release:
   on uv
 * Bugfix: `FractionalBacktest` failed rescaling overlay indicators backed
   by read-only arrays (as produced under pandas ≥ 3.0 copy-on-write)
+* The project now requires Python ≥ 3.13 (dropping the pre-3.13
+  `SharedMemory(track=)` shim); CI covers 3.13 and 3.14
+* Bugfix: `Backtest.optimize()` could hang on Python 3.14+, whose default
+  multiprocessing start method (`forkserver`) cannot inherit strategy
+  classes defined in scripts/notebooks; the optimization `Pool` now
+  explicitly uses the `fork` context where the platform provides it
 
 ### 0.6.5
 (2025-07-30)

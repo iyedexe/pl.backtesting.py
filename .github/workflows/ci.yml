@@ -26,7 +26,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
         with: { enable-cache: true }
-      - run: uv sync --python 3.10 --extra test --extra dev
+      - run: uv sync --python 3.13 --extra test --extra dev
       # Test against pre-release versions of the heavy dependencies
       # (out-of-lock on purpose, hence --no-sync below)
       - run: uv pip install --prerelease allow -U bokeh pandas numpy
@@ -40,7 +40,7 @@ jobs:
     timeout-minutes: 3
     strategy:
       matrix:
-        python-version: ['3.12', '3.13']
+        python-version: ['3.13', '3.14']
         experimental: [false]
         include:
           - python-version: '3'  # whatever the latest stable is
@@ -77,7 +77,7 @@ jobs:
       - run: git fetch --depth=1 origin +refs/tags/*:refs/tags/*
       - uses: astral-sh/setup-uv@v6
         with: { enable-cache: true }
-      - run: uv sync --python 3.12 --extra doc --extra test  # installs project editable, provides ./backtesting/_version.py for pdoc
+      - run: uv sync --python 3.13 --extra doc --extra test  # installs project editable, provides ./backtesting/_version.py for pdoc
       - run: time uv run doc/build.sh
 
   win64:
