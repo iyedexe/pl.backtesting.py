@@ -3,39 +3,36 @@ What's New
 
 These were the major changes contributing to each release:
 
-### Fork: pairs-trading research lab
-(2026-08-30)
+### Fork: three strategy research labs
+(2026-09-06)
 
-* New `pairs_trading` package: cointegration/half-life/Hurst statistics,
-  Kalman hedge ratios, a two-leg dollar-neutral backtest engine,
-  walk-forward harness with formation-only gating, universe screening,
-  five asset-class studies (crypto/stocks/forex/commodities/cross-asset),
-  and the `pairs` CLI producing `research/reports/report.md`.
-* Vendored reproducible daily data under `research/data/` (see SOURCES.md).
-* Packaging migrated from `setup.py` to PEP 621 `pyproject.toml`,
-  managed with [uv](https://docs.astral.sh/uv/) (`uv.lock` committed);
-  CI ported to uv.
-* Bugfix: `FractionalBacktest` in-place indicator scaling failed under
-  pandas ≥ 3 copy-on-write (read-only buffers).
+This fork of backtesting.py bundles three independent strategy studies,
+each with its own package, data and write-up, under one uv-managed project:
 
-### 0.x.x
-
-* New example notebook: _Index Inclusion Strategy_, on anticipating
-  index additions ahead of announcement (the "index effect")
-* New `bot/`: a Telegram signal bot applying the index-inclusion strategy
-  to live data for the S&P 500, Nasdaq-100, FTSE 100 and DAX 40
-* The project is now managed with [uv](https://docs.astral.sh/uv/):
-  PEP 621 `pyproject.toml` replaces `setup.py`, `bot/` is a workspace
-  member, dependencies are pinned in a committed `uv.lock`, and CI runs
-  on uv
-* Bugfix: `FractionalBacktest` failed rescaling overlay indicators backed
-  by read-only arrays (as produced under pandas ≥ 3.0 copy-on-write)
-* The project now requires Python ≥ 3.13 (dropping the pre-3.13
-  `SharedMemory(track=)` shim); CI covers 3.13 and 3.14
-* Bugfix: `Backtest.optimize()` could hang on Python 3.14+, whose default
-  multiprocessing start method (`forkserver`) cannot inherit strategy
-  classes defined in scripts/notebooks; the optimization `Pool` now
-  explicitly uses the `fork` context where the platform provides it
+* `pairs_trading/` — cointegration pairs trading (statistical arbitrage)
+  backtested walk-forward on crypto, US stocks, forex, commodities and
+  cross-asset pairs: Engle-Granger/half-life/Hurst statistics, Kalman
+  hedge ratios, a two-leg dollar-neutral engine, universe screening,
+  deflated-Sharpe grids; `pairs` CLI and `research/reports/report.md`.
+* `pmcc/` — Poor Man's Covered Call on 17 French large caps 2000-2015
+  with synthetic option pricing, benchmarks, an 800-run sensitivity grid
+  and a paper-trading execution scaffold; `pmcc` CLI and `pmcc/README.md`.
+* `index_inclusion/` + `doc/examples/Index Inclusion Strategy` — trading
+  the index effect on a synthetic point-in-time market with a mechanical
+  FTSE-100-style rulebook; `bot/` is a Telegram signal bot (uv workspace
+  member `inclusion-bot`) applying it to live S&P 500 / Nasdaq-100 /
+  FTSE 100 / DAX 40 data.
+* `examples/` — one runnable script per strategy that sweeps its
+  parameters and plots the best-performing configuration.
+* Packaging: PEP 621 `pyproject.toml` replaces `setup.py`; the project
+  requires Python >= 3.13 and is managed with [uv](https://docs.astral.sh/uv/)
+  (single committed `uv.lock`, `bot/` as a workspace member); CI runs on
+  uv for 3.13/3.14.
+* Library fixes: `FractionalBacktest` failed rescaling overlay indicators
+  backed by read-only arrays (pandas >= 3 copy-on-write); `Backtest.optimize()`
+  could hang on Python 3.14+ (`forkserver` default) — the optimization
+  `Pool` now uses the `fork` context where available; pre-3.13
+  `SharedMemory(track=)` shim dropped; bokeh named colors passed as CSS.
 
 ### 0.6.5
 (2025-07-30)

@@ -38,3 +38,6 @@ STOP
 # but keep generated pmcc result charts
 !pmcc/results/*.png
 pmcc/results/all_curves.csv.gz
+
+# strategy example figures are committed
+!examples/figures/*.png

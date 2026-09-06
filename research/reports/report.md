@@ -93,11 +93,13 @@ A against `βN` dollars of B (dollar-neutral in the β-weighted sense, gross =
 per-side proportional cost on every leg's traded notional — 12 bp (crypto),
 5 bp (stocks), 2 bp (forex), 5 bp (commodities spot proxies) per side, with
 0×/0.5×/2×/4× sweeps. Hedge variants: formation-window OLS (default) and a
-Kalman filter with random-walk state (Vₑ = 1e-3 after E. Chan 2013) supplying
-the *hedge-ratio path* β_t, with δ = 1e-5 and the intercept frozen per window —
-a deliberately slower drift than Chan's δ = 1e-4, because a fully adaptive
-(α, β) state whitens its own innovations and absorbs exactly the mean
-reversion the strategy trades.
+Kalman filter (Vₑ = 1e-3 after E. Chan 2013) supplying the *hedge-ratio
+path* β_t: one continuous, causal pass over the whole history, initialized by
+OLS on the first (never traded) formation window, with the intercept pinned
+and δ = 1e-7 — a deliberately slower drift than Chan's δ = 1e-4 because we
+filter log prices, and because a fully adaptive (α, β) state whitens its own
+innovations and absorbs exactly the mean reversion the strategy trades.
+Kalman windows are gated by an ADF test on the filtered spread they trade.
 
 **Statistics.** Sharpe annualized at 252 (365 for crypto) periods; Newey-West
 HAC t-statistics on mean daily returns (automatic lag rule); the threshold
@@ -959,4 +961,4 @@ uv run pairs report
 Study data ranges: commodities 1990-01-02→2026-08-25 (3 assets); cross 1990-01-02→2026-08-25 (9 assets); crypto 2016-01-01→2026-05-23 (13 assets); forex 1999-01-04→2026-08-21 (11 assets); stocks 2013-02-08→2018-02-07 (505 assets).
 
 
-*Report generated 2026-08-30 20:52 UTC.*
+*Report generated 2026-09-06 19:31 UTC.*

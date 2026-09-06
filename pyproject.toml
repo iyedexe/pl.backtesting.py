@@ -92,7 +92,7 @@ inclusion-bot = { workspace = true }
 include-package-data = true
 
 [tool.setuptools.packages.find]
-include = ["backtesting*", "pairs_trading*", "pmcc*"]
+include = ["backtesting*", "pairs_trading*", "pmcc*", "index_inclusion*"]
 
 [tool.setuptools.package-data]
 backtesting = ["*.js", "test/*.csv"]

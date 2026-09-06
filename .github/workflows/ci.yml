@@ -67,8 +67,8 @@ jobs:
       - run: uv run inclusion-bot selftest
       # Smoke-run one small end-to-end experiment per strategy
       - run: uv run pairs run --study commodities --quick
-      - run: uv run python examples/index_inclusion.py --quick
-      - run: uv run python examples/pmcc_covered_call.py --quick
+      - run: uv run python examples/run_index_inclusion.py --quick
+      - run: uv run python examples/run_pmcc.py --quick
 
   docs:
     needs: lint

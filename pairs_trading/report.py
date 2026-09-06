@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pandas as pd
@@ -106,11 +106,13 @@ A against `βN` dollars of B (dollar-neutral in the β-weighted sense, gross =
 per-side proportional cost on every leg's traded notional — 12 bp (crypto),
 5 bp (stocks), 2 bp (forex), 5 bp (commodities spot proxies) per side, with
 0×/0.5×/2×/4× sweeps. Hedge variants: formation-window OLS (default) and a
-Kalman filter with random-walk state (Vₑ = 1e-3 after E. Chan 2013) supplying
-the *hedge-ratio path* β_t, with δ = 1e-5 and the intercept frozen per window —
-a deliberately slower drift than Chan's δ = 1e-4, because a fully adaptive
-(α, β) state whitens its own innovations and absorbs exactly the mean
-reversion the strategy trades.
+Kalman filter (Vₑ = 1e-3 after E. Chan 2013) supplying the *hedge-ratio
+path* β_t: one continuous, causal pass over the whole history, initialized by
+OLS on the first (never traded) formation window, with the intercept pinned
+and δ = 1e-7 — a deliberately slower drift than Chan's δ = 1e-4 because we
+filter log prices, and because a fully adaptive (α, β) state whitens its own
+innovations and absorbs exactly the mean reversion the strategy trades.
+Kalman windows are gated by an ADF test on the filtered spread they trade.
 
 **Statistics.** Sharpe annualized at 252 (365 for crypto) periods; Newey-West
 HAC t-statistics on mean daily returns (automatic lag rule); the threshold
@@ -220,7 +222,7 @@ def build_report() -> Path:
             f"{s['study']} {s['start']}→{s['end']} "
             f"({s['panel_shape'][1]} assets)" for s in stamps) + '.')
     parts.append(f'\n\n*Report generated '
-                 f'{datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")}.*')
+                 f'{datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")}.*')
     out = REPORTS / 'report.md'
     out.write_text('\n'.join(parts) + '\n')
     return out

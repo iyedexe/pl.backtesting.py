@@ -24,7 +24,7 @@ import io
 import json
 import subprocess
 import zipfile
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pandas as pd
@@ -216,7 +216,7 @@ def main():
     build_sp500(args.src, manifest)
     build_stocks_long(args.src, manifest)
     meta = {
-        'built_utc': datetime.now(timezone.utc).isoformat(timespec='seconds'),
+        'built_utc': datetime.now(UTC).isoformat(timespec='seconds'),
         'files': manifest,
     }
     (OUT_DIR / 'manifest.json').write_text(json.dumps(meta, indent=2) + '\n')
