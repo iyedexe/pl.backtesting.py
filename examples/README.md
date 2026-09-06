@@ -29,8 +29,18 @@ over entry threshold × exit threshold × z-score window.
 
 **Most robust pair: WTI/Brent** (out-of-sample Sharpe 0.39, Newey-West
 t = 3.3, 79 trades over 35 years under the default rule; NATGAS/WTI posts a
-higher raw Sharpe of 0.49 on only 21 trades, t = 2.5). The threshold sweep on
-WTI/Brent is reported by the script and in `tables/pairs_best_grid.csv`.
+higher raw Sharpe of 0.49 on only 21 trades, t = 2.5, and famous stock pairs
+such as XOM/CVX and KO/PEP show up with a *single* trade — their gate almost
+never opens, V/MA's never does). **Best configuration for WTI/Brent: enter at
+2.5σ, exit at 0, 20-bar z-window** — Sharpe **0.55** (CAGR 1.8%, max drawdown
+7.8%, 41 trades) vs 0.39 for the default 2σ / 0 / 60-bar rule. The whole top
+of the grid uses 20–30-bar windows: the spread's half-life is ~9 bars, and a
+z-score window of a few half-lives (E. Chan's rule of thumb) beats the
+literature's 60-bar default, which smears the entry signal. Raising the
+threshold to 2.5σ trades less often (41 vs 79 round trips) for a better
+trade quality; the un-gated default compounds more (3.6× vs 2.0×) but with
+3.5× the drawdown. Absolute returns are modest for every cell — this is a
+statistically real but small edge on spot-price marks, not a strategy.
 
 ## 2. Poor Man's Covered Call — `run_pmcc.py`
 

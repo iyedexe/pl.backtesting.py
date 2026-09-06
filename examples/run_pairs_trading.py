@@ -80,15 +80,17 @@ def main(quick: bool = False) -> None:
     ax.barh(ranking.index[::-1], vals[::-1],
             color=[color_of[c] for c in ranking['class'][::-1]])
     for y, (name, row) in enumerate(ranking[::-1].iterrows()):
-        ax.annotate(f' t={row["nw_tstat"]:.1f} / {int(row["n_trades"])}',
-                    (max(float(vals[name]), 0), y), fontsize=7.5, va='center',
-                    color=plotting.INK2)
+        label = (f' t={row["nw_tstat"]:.1f} / {int(row["n_trades"])} trades'
+                 if row['n_trades'] > 0 else ' gate never opened')
+        ax.annotate(label, (max(float(vals[name]), 0), y), fontsize=7.5,
+                    va='center', color=plotting.INK2)
     ax.axvline(0, color=plotting.AXIS, linewidth=0.8)
     ax.set_xlabel('out-of-sample annualized Sharpe (default 2σ rule, base costs); '
-                  'bar labels: Newey-West t-stat / trades')
-    for c in classes:
-        ax.barh([], [], color=color_of[c], label=c)
-    ax.legend(loc='lower right', ncols=3, title='asset class')
+                  'labels: Newey-West t-stat / trade count')
+    from matplotlib.patches import Patch
+    ax.legend(handles=[Patch(color=color_of[c], label=c) for c in classes],
+              loc='upper center', bbox_to_anchor=(0.5, -0.14), ncols=len(classes),
+              title='asset class', frameon=False)
     ax.set_title('Pairs trading: every featured pair, ranked', loc='left', fontweight='bold')
     fig.savefig(fig_dir / 'pairs_ranking.png', bbox_inches='tight')
     plt.close(fig)

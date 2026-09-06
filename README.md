@@ -15,6 +15,12 @@ package, vendored data, tests and write-up, in one
 parameters and plots the **best-performing configuration**
 ([examples/README.md](examples/README.md)):
 
+| Strategy | Best configuration found | Sharpe (best / default / benchmark) |
+|---|---|---|
+| Pairs trading — WTI/Brent, walk-forward OOS | enter 2.5σ, exit 0, 20-bar z-window | **0.55** / 0.39 / 0.42 without the cointegration gate (3.5× the drawdown) |
+| Poor Man's Covered Call — 10 French large caps | short δ 0.35, LEAPS ≥ 720 d | **0.83** / 0.58 / covered call 0.62, buy & hold 0.36 |
+| Index inclusion — synthetic SIX 100 | hold ≤ 25, buffer 2, hunt 15 d pre-cutoff | **1.39** / 1.27 on the tutorial seed — but 0.86 / 0.86 averaged over fresh seeds |
+
 | Pairs trading | Poor Man's Covered Call | Index inclusion |
 |---|---|---|
 | ![](examples/figures/pairs_best_equity.png) | ![](examples/figures/pmcc_best_equity.png) | ![](examples/figures/index_best_equity.png) |
