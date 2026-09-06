@@ -22,3 +22,8 @@ build/*
 *~*
 
 .venv/
+
+# newsbot runtime files
+newsbot_state.json
+config.yaml
+newsbot_backtest_*.html

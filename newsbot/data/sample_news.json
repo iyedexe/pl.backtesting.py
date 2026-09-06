@@ -1,0 +1,467 @@
+{
+ "_note": "SYNTHETIC demo headlines aligned to real GOOG.csv trading days. Not actual news; for testing the pipeline only. Replace with your own history (same schema) for a real backtest.",
+ "news": [
+  {
+   "id": "demo-2005-01-20-earnings",
+   "published": "2005-01-20T21:05:00Z",
+   "tickers": [
+    "GOOG"
+   ],
+   "headline": "Google Q4 results beat estimates as revenue jumps 30%; raises full-year outlook",
+   "summary": "Revenue and EPS topped Wall Street consensus. Management raised its full-year guidance on strong ad demand.",
+   "source": "demo",
+   "url": ""
+  },
+  {
+   "id": "demo-2005-04-21-earnings",
+   "published": "2005-04-21T21:05:00Z",
+   "tickers": [
+    "GOOG"
+   ],
+   "headline": "Google posts record quarterly revenue, tops expectations",
+   "summary": "Paid clicks grew 25% year over year. Operating margin expanded.",
+   "source": "demo",
+   "url": ""
+  },
+  {
+   "id": "demo-2005-06-06-analyst",
+   "published": "2005-06-06T13:05:00Z",
+   "tickers": [
+    "GOOG"
+   ],
+   "headline": "Goldman Sachs upgrades Google to Buy, raises price target to $350",
+   "summary": "Analyst cited accelerating paid search growth.",
+   "source": "demo",
+   "url": ""
+  },
+  {
+   "id": "demo-2005-07-21-earnings",
+   "published": "2005-07-21T21:05:00Z",
+   "tickers": [
+    "GOOG"
+   ],
+   "headline": "Google Q2 profit surges past estimates on strong search demand",
+   "summary": "EPS came in well ahead of consensus. Guidance above expectations.",
+   "source": "demo",
+   "url": ""
+  },
+  {
+   "id": "demo-2005-08-18-pr",
+   "published": "2005-08-18T12:30:00Z",
+   "tickers": [
+    "GOOG"
+   ],
+   "headline": "Google prices $4 billion secondary stock offering",
+   "summary": "The company announced a public offering of 14.2 million Class A shares.",
+   "source": "demo",
+   "url": ""
+  },
+  {
+   "id": "demo-2005-10-20-earnings",
+   "published": "2005-10-20T21:05:00Z",
+   "tickers": [
+    "GOOG"
+   ],
+   "headline": "Google shares drop as revenue growth slows, misses consensus",
+   "summary": "Revenue came in below analyst forecasts for the quarter.",
+   "source": "demo",
+   "url": ""
+  },
+  {
+   "id": "demo-2006-01-19-earnings",
+   "published": "2006-01-19T21:05:00Z",
+   "tickers": [
+    "GOOG"
+   ],
+   "headline": "Google posts record quarterly revenue, tops expectations",
+   "summary": "Paid clicks grew 25% year over year. Operating margin expanded.",
+   "source": "demo",
+   "url": ""
+  },
+  {
+   "id": "demo-2006-03-23-pr",
+   "published": "2006-03-23T12:30:00Z",
+   "tickers": [
+    "GOOG"
+   ],
+   "headline": "Google to be added to S&P 500 index",
+   "summary": "S&P announced Google will join the S&P 500 after the close of trading on March 31.",
+   "source": "demo",
+   "url": ""
+  },
+  {
+   "id": "demo-2006-04-20-earnings",
+   "published": "2006-04-20T21:05:00Z",
+   "tickers": [
+    "GOOG"
+   ],
+   "headline": "Google Q1 profit surges past estimates on strong search demand",
+   "summary": "EPS came in well ahead of consensus. Guidance above expectations.",
+   "source": "demo",
+   "url": ""
+  },
+  {
+   "id": "demo-2006-07-20-earnings",
+   "published": "2006-07-20T21:05:00Z",
+   "tickers": [
+    "GOOG"
+   ],
+   "headline": "Google Q2 results beat estimates as revenue jumps 30%; raises full-year outlook",
+   "summary": "Revenue and EPS topped Wall Street consensus. Management raised its full-year guidance on strong ad demand.",
+   "source": "demo",
+   "url": ""
+  },
+  {
+   "id": "demo-2006-10-19-earnings",
+   "published": "2006-10-19T21:05:00Z",
+   "tickers": [
+    "GOOG"
+   ],
+   "headline": "Google shares drop as revenue growth slows, misses consensus",
+   "summary": "Revenue came in below analyst forecasts for the quarter.",
+   "source": "demo",
+   "url": ""
+  },
+  {
+   "id": "demo-2007-01-18-earnings",
+   "published": "2007-01-18T21:05:00Z",
+   "tickers": [
+    "GOOG"
+   ],
+   "headline": "Google Q4 profit surges past estimates on strong search demand",
+   "summary": "EPS came in well ahead of consensus. Guidance above expectations.",
+   "source": "demo",
+   "url": ""
+  },
+  {
+   "id": "demo-2007-04-19-earnings",
+   "published": "2007-04-19T21:05:00Z",
+   "tickers": [
+    "GOOG"
+   ],
+   "headline": "Google Q1 results beat estimates as revenue jumps 30%; raises full-year outlook",
+   "summary": "Revenue and EPS topped Wall Street consensus. Management raised its full-year guidance on strong ad demand.",
+   "source": "demo",
+   "url": ""
+  },
+  {
+   "id": "demo-2007-05-14-pr",
+   "published": "2007-05-14T12:30:00Z",
+   "tickers": [
+    "GOOG"
+   ],
+   "headline": "Google wins $500 million advertising contract with major retailer",
+   "summary": "Multi-year agreement covers search and display advertising.",
+   "source": "demo",
+   "url": ""
+  },
+  {
+   "id": "demo-2007-07-19-earnings",
+   "published": "2007-07-19T21:05:00Z",
+   "tickers": [
+    "GOOG"
+   ],
+   "headline": "Google posts record quarterly revenue, tops expectations",
+   "summary": "Paid clicks grew 25% year over year. Operating margin expanded.",
+   "source": "demo",
+   "url": ""
+  },
+  {
+   "id": "demo-2007-10-18-earnings",
+   "published": "2007-10-18T21:05:00Z",
+   "tickers": [
+    "GOOG"
+   ],
+   "headline": "Google shares drop as revenue growth slows, misses consensus",
+   "summary": "Revenue came in below analyst forecasts for the quarter.",
+   "source": "demo",
+   "url": ""
+  },
+  {
+   "id": "demo-2008-01-17-earnings",
+   "published": "2008-01-17T21:05:00Z",
+   "tickers": [
+    "GOOG"
+   ],
+   "headline": "Google Q4 results beat estimates as revenue jumps 30%; raises full-year outlook",
+   "summary": "Revenue and EPS topped Wall Street consensus. Management raised its full-year guidance on strong ad demand.",
+   "source": "demo",
+   "url": ""
+  },
+  {
+   "id": "demo-2008-03-04-analyst",
+   "published": "2008-03-04T13:05:00Z",
+   "tickers": [
+    "GOOG"
+   ],
+   "headline": "Analyst downgrades Google to Neutral on display ad concerns",
+   "summary": "Price target cut to $500.",
+   "source": "demo",
+   "url": ""
+  },
+  {
+   "id": "demo-2008-04-17-earnings",
+   "published": "2008-04-17T21:05:00Z",
+   "tickers": [
+    "GOOG"
+   ],
+   "headline": "Google posts record quarterly revenue, tops expectations",
+   "summary": "Paid clicks grew 25% year over year. Operating margin expanded.",
+   "source": "demo",
+   "url": ""
+  },
+  {
+   "id": "demo-2008-07-17-earnings",
+   "published": "2008-07-17T21:05:00Z",
+   "tickers": [
+    "GOOG"
+   ],
+   "headline": "Google Q2 profit surges past estimates on strong search demand",
+   "summary": "EPS came in well ahead of consensus. Guidance above expectations.",
+   "source": "demo",
+   "url": ""
+  },
+  {
+   "id": "demo-2008-10-16-earnings",
+   "published": "2008-10-16T21:05:00Z",
+   "tickers": [
+    "GOOG"
+   ],
+   "headline": "Google shares drop as revenue growth slows, misses consensus",
+   "summary": "Revenue came in below analyst forecasts for the quarter.",
+   "source": "demo",
+   "url": ""
+  },
+  {
+   "id": "demo-2009-01-15-earnings",
+   "published": "2009-01-15T21:05:00Z",
+   "tickers": [
+    "GOOG"
+   ],
+   "headline": "Google posts record quarterly revenue, tops expectations",
+   "summary": "Paid clicks grew 25% year over year. Operating margin expanded.",
+   "source": "demo",
+   "url": ""
+  },
+  {
+   "id": "demo-2009-04-16-earnings",
+   "published": "2009-04-16T21:05:00Z",
+   "tickers": [
+    "GOOG"
+   ],
+   "headline": "Google Q1 profit surges past estimates on strong search demand",
+   "summary": "EPS came in well ahead of consensus. Guidance above expectations.",
+   "source": "demo",
+   "url": ""
+  },
+  {
+   "id": "demo-2009-07-16-earnings",
+   "published": "2009-07-16T21:05:00Z",
+   "tickers": [
+    "GOOG"
+   ],
+   "headline": "Google Q2 results beat estimates as revenue jumps 30%; raises full-year outlook",
+   "summary": "Revenue and EPS topped Wall Street consensus. Management raised its full-year guidance on strong ad demand.",
+   "source": "demo",
+   "url": ""
+  },
+  {
+   "id": "demo-2009-09-30-pr",
+   "published": "2009-09-30T12:30:00Z",
+   "tickers": [
+    "GOOG"
+   ],
+   "headline": "Google announces strategic partnership with Sony on TV platform",
+   "summary": "",
+   "source": "demo",
+   "url": ""
+  },
+  {
+   "id": "demo-2009-10-15-earnings",
+   "published": "2009-10-15T21:05:00Z",
+   "tickers": [
+    "GOOG"
+   ],
+   "headline": "Google shares drop as revenue growth slows, misses consensus",
+   "summary": "Revenue came in below analyst forecasts for the quarter.",
+   "source": "demo",
+   "url": ""
+  },
+  {
+   "id": "demo-2010-01-21-earnings",
+   "published": "2010-01-21T21:05:00Z",
+   "tickers": [
+    "GOOG"
+   ],
+   "headline": "Google Q4 profit surges past estimates on strong search demand",
+   "summary": "EPS came in well ahead of consensus. Guidance above expectations.",
+   "source": "demo",
+   "url": ""
+  },
+  {
+   "id": "demo-2010-04-06-news",
+   "published": "2010-04-06T12:30:00Z",
+   "tickers": [
+    "GOOG"
+   ],
+   "headline": "Google receives FTC subpoena over search practices",
+   "summary": "Regulators are investigating whether the company favors its own services.",
+   "source": "demo",
+   "url": ""
+  },
+  {
+   "id": "demo-2010-04-15-earnings",
+   "published": "2010-04-15T21:05:00Z",
+   "tickers": [
+    "GOOG"
+   ],
+   "headline": "Google Q1 results beat estimates as revenue jumps 30%; raises full-year outlook",
+   "summary": "Revenue and EPS topped Wall Street consensus. Management raised its full-year guidance on strong ad demand.",
+   "source": "demo",
+   "url": ""
+  },
+  {
+   "id": "demo-2010-07-15-earnings",
+   "published": "2010-07-15T21:05:00Z",
+   "tickers": [
+    "GOOG"
+   ],
+   "headline": "Google posts record quarterly revenue, tops expectations",
+   "summary": "Paid clicks grew 25% year over year. Operating margin expanded.",
+   "source": "demo",
+   "url": ""
+  },
+  {
+   "id": "demo-2010-10-21-earnings",
+   "published": "2010-10-21T21:05:00Z",
+   "tickers": [
+    "GOOG"
+   ],
+   "headline": "Google shares drop as revenue growth slows, misses consensus",
+   "summary": "Revenue came in below analyst forecasts for the quarter.",
+   "source": "demo",
+   "url": ""
+  },
+  {
+   "id": "demo-2011-01-20-earnings",
+   "published": "2011-01-20T21:05:00Z",
+   "tickers": [
+    "GOOG"
+   ],
+   "headline": "Google Q4 results beat estimates as revenue jumps 30%; raises full-year outlook",
+   "summary": "Revenue and EPS topped Wall Street consensus. Management raised its full-year guidance on strong ad demand.",
+   "source": "demo",
+   "url": ""
+  },
+  {
+   "id": "demo-2011-04-21-earnings",
+   "published": "2011-04-21T21:05:00Z",
+   "tickers": [
+    "GOOG"
+   ],
+   "headline": "Google posts record quarterly revenue, tops expectations",
+   "summary": "Paid clicks grew 25% year over year. Operating margin expanded.",
+   "source": "demo",
+   "url": ""
+  },
+  {
+   "id": "demo-2011-07-21-earnings",
+   "published": "2011-07-21T21:05:00Z",
+   "tickers": [
+    "GOOG"
+   ],
+   "headline": "Google Q2 profit surges past estimates on strong search demand",
+   "summary": "EPS came in well ahead of consensus. Guidance above expectations.",
+   "source": "demo",
+   "url": ""
+  },
+  {
+   "id": "demo-2011-08-15-pr",
+   "published": "2011-08-15T12:30:00Z",
+   "tickers": [
+    "GOOG"
+   ],
+   "headline": "Google agrees to acquire Motorola Mobility for $12.5 billion",
+   "summary": "Deal expands Google's patent portfolio; acquirer news, not a takeover of Google itself.",
+   "source": "demo",
+   "url": ""
+  },
+  {
+   "id": "demo-2011-10-20-earnings",
+   "published": "2011-10-20T21:05:00Z",
+   "tickers": [
+    "GOOG"
+   ],
+   "headline": "Google shares drop as revenue growth slows, misses consensus",
+   "summary": "Revenue came in below analyst forecasts for the quarter.",
+   "source": "demo",
+   "url": ""
+  },
+  {
+   "id": "demo-2012-01-19-earnings",
+   "published": "2012-01-19T21:05:00Z",
+   "tickers": [
+    "GOOG"
+   ],
+   "headline": "Google posts record quarterly revenue, tops expectations",
+   "summary": "Paid clicks grew 25% year over year. Operating margin expanded.",
+   "source": "demo",
+   "url": ""
+  },
+  {
+   "id": "demo-2012-02-16-analyst",
+   "published": "2012-02-16T13:05:00Z",
+   "tickers": [
+    "GOOG"
+   ],
+   "headline": "Morgan Stanley upgrades Google to Overweight, lifts price target",
+   "summary": "Cites mobile search momentum.",
+   "source": "demo",
+   "url": ""
+  },
+  {
+   "id": "demo-2012-04-19-earnings",
+   "published": "2012-04-19T21:05:00Z",
+   "tickers": [
+    "GOOG"
+   ],
+   "headline": "Google Q1 profit surges past estimates on strong search demand",
+   "summary": "EPS came in well ahead of consensus. Guidance above expectations.",
+   "source": "demo",
+   "url": ""
+  },
+  {
+   "id": "demo-2012-06-11-pr",
+   "published": "2012-06-11T12:30:00Z",
+   "tickers": [
+    "GOOG"
+   ],
+   "headline": "Google board approves $1 billion share repurchase program",
+   "summary": "",
+   "source": "demo",
+   "url": ""
+  },
+  {
+   "id": "demo-2012-07-19-earnings",
+   "published": "2012-07-19T21:05:00Z",
+   "tickers": [
+    "GOOG"
+   ],
+   "headline": "Google Q2 results beat estimates as revenue jumps 30%; raises full-year outlook",
+   "summary": "Revenue and EPS topped Wall Street consensus. Management raised its full-year guidance on strong ad demand.",
+   "source": "demo",
+   "url": ""
+  },
+  {
+   "id": "demo-2012-10-18-earnings",
+   "published": "2012-10-18T21:05:00Z",
+   "tickers": [
+    "GOOG"
+   ],
+   "headline": "Google shares drop as revenue growth slows, misses consensus",
+   "summary": "Revenue came in below analyst forecasts for the quarter.",
+   "source": "demo",
+   "url": ""
+  }
+ ]
+}

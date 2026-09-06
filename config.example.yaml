@@ -1,0 +1,55 @@
+# newsbot configuration — copy to config.yaml and edit.
+# Run:  python -m newsbot run --config config.yaml
+# Every key is optional; defaults are in newsbot/config.py (DEFAULT_CONFIG).
+
+# Tickers you are willing to trade. Empty list = any ticker the news names (RSS feeds
+# then rely on "(NASDAQ: XYZ)" / "$XYZ" patterns in the text to attribute headlines).
+universe: [AAPL, MSFT, NVDA, AMZN, GOOG, META, TSLA, AMD, NFLX, CRM]
+
+sources:
+  - type: yahoo                       # one Yahoo Finance headline feed per ticker in `universe`
+  # - type: rss                       # any RSS/Atom feed; tickers extracted from text
+  #   url: https://www.globenewswire.com/RssFeed/subjectcode/12-Earnings%20Releases%20And%20Operating%20Results/feedTitle/GlobeNewswire%20-%20Earnings%20Releases%20And%20Operating%20Results
+  #   name: globenewswire-earnings
+  # - type: alpaca                    # Benzinga news via Alpaca data API (needs APCA_API_KEY_ID / APCA_API_SECRET_KEY)
+  #   limit: 50
+  # - type: file                      # JSON/CSV file (replay / testing)
+  #   path: newsbot/data/sample_news.json
+
+classifier:
+  type: rules                         # rules | claude
+  # model: claude-opus-5              # used when type: claude (pip install anthropic, set ANTHROPIC_API_KEY)
+  # effort: low
+
+signals:
+  min_score: 0.5                      # classification score needed to go long (0..1)
+  target_pct: 0.05                    # take-profit distance from fill (5%)
+  stop_pct: 0.03                      # stop-loss distance from fill (3%)
+  max_hold_days: 7                    # hard time exit, calendar days after entry (one week)
+  signal_ttl_hours: 18                # unfilled signal validity (after-close news -> next open)
+  scale_target_by_score: true         # stronger catalyst -> wider target (x1.0 @ 0.5 ... x1.25 @ 1.0)
+  categories: []                      # optional allow-list, e.g. [earnings_beat, guidance_raise, fda_approval]
+  blocked_categories: []              # optional deny-list, e.g. [partnership]
+
+prices:
+  type: yfinance                      # yfinance | alpaca | static | csv
+  # feed: iex                         # alpaca only
+
+broker:
+  type: paper                         # paper | alpaca
+  cash: 100000                        # paper starting cash
+  commission: 0.0                     # paper: per-order fixed cost
+  slippage_bps: 5                     # paper: fill slippage in basis points
+  paper: true                         # alpaca: use paper-api.alpaca.markets (set false for real money)
+
+bot:
+  max_positions: 5
+  position_size_pct: 0.2              # notional per position as a fraction of equity
+  risk_per_trade_pct: 0.01            # optional: cap size so a stop-out loses <= 1% of equity
+  max_position_value: null            # optional absolute cap in dollars
+  fractional_shares: false
+  max_news_age_minutes: 30            # ignore headlines older than this when first seen
+  max_chase_pct: 0.05                 # skip entry if price already ran > 5% above the signal-time price
+  market_hours_only: true             # trade only during the regular session; signals wait for the open
+  poll_interval_seconds: 60
+  state_file: newsbot_state.json      # positions, pending signals, seen headlines, trade log

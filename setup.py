@@ -55,6 +55,10 @@ if __name__ == '__main__':
                 'coverage',
                 'mypy',
             ],
+            'newsbot': [      # live news sources / config files for the `newsbot` package
+                'requests',
+                'pyyaml',
+            ],
         },
         test_suite="backtesting.test",
         python_requires='>=3.9',
