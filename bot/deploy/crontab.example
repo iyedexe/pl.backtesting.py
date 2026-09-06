@@ -1,0 +1,8 @@
+# Run one scan every weekday at 22:15 UTC - after the US close; the European
+# markets closed hours earlier, so one daily scan covers all four indices.
+# Cron runs with a minimal PATH, so use the absolute path to uv (usually
+# ~/.local/bin/uv, see `command -v uv`); uv provisions Python and the locked
+# dependencies on first run.
+TELEGRAM_BOT_TOKEN=123456:replace-me
+TELEGRAM_CHAT_ID=123456789
+15 22 * * 1-5  cd /path/to/pl.backtesting.py/bot && $HOME/.local/bin/uv run inclusion-bot scan >> inclusion_bot.log 2>&1

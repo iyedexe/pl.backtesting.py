@@ -491,7 +491,7 @@ class TrailingStrategy(Strategy):
         """
         assert 0 < pct < 1, 'Need pct= as rate, i.e. 5% == 0.05'
         pct_in_atr = np.mean(self.data.Close * pct / self.__atr)  # type: ignore
-        self.set_trailing_sl(pct_in_atr)  # type: ignore[arg-type]
+        self.set_trailing_sl(pct_in_atr)
 
     def next(self):
         super().next()
@@ -551,11 +551,12 @@ class FractionalBacktest(Backtest):
         trades['Size'] *= self._fractional_unit
         trades[['EntryPrice', 'ExitPrice', 'TP', 'SL']] /= self._fractional_unit
 
-        # Since pandas 3 (copy-on-write), indicator buffers may be read-only,
-        # so scale out-of-place (__array_finalize__ carries name/_opts over).
-        result['_strategy']._indicators = [
-            indicator / self._fractional_unit if indicator._opts['overlay'] else
-            indicator for indicator in result['_strategy']._indicators]
+        indicators = result['_strategy']._indicators
+        for i, indicator in enumerate(indicators):
+            if indicator._opts['overlay']:
+                if not indicator.flags.writeable:  # e.g. pandas>=3 copy-on-write view
+                    indicators[i] = indicator = indicator.copy()
+                indicator /= self._fractional_unit
 
         return result
 

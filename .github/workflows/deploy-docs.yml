@@ -11,25 +11,18 @@ jobs:
       TQDM_MININTERVAL: 10
 
     steps:
-      - uses: actions/setup-python@v5
-        with:
-          python-version: 3.13
-
-      - uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}
-
       - uses: actions/checkout@v4
         with:
           fetch-depth: 3
       - name: Fetch tags
         run: git fetch --depth=1 origin +refs/tags/*:refs/tags/*
 
-      - run: pip install -U pip setuptools wheel
-      - run: pip install -U -e .[doc,test]
+      - uses: astral-sh/setup-uv@v6
+        with: { enable-cache: true }
 
-      - run: time doc/build.sh
+      - run: uv sync --python 3.13 --extra doc --extra test
+
+      - run: time uv run doc/build.sh
 
       - run: .github/deploy-gh-pages.sh
         env:

@@ -1,0 +1,42 @@
+# Copy to .github/workflows/inclusion-bot.yml to run the bot serverlessly on
+# GitHub Actions. Add TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID as repository
+# secrets (Settings -> Secrets and variables -> Actions).
+#
+# State between runs is carried via the Actions cache (best-effort: a cache
+# eviction re-arms dedupe keys and open positions are forgotten - acceptable
+# for a signal bot; commit bot/bot_state.json from the job instead if you
+# want durable state).
+
+name: inclusion-bot
+on:
+  schedule:
+    - cron: '15 22 * * 1-5'   # 22:15 UTC weekdays, after the US close
+  workflow_dispatch: {}
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - name: Restore bot state
+        uses: actions/cache/restore@v4
+        with:
+          path: bot/bot_state.json
+          key: inclusion-bot-state
+          restore-keys: inclusion-bot-state
+      - name: Scan
+        working-directory: bot
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: uv run inclusion-bot scan
+      - name: Save bot state
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: bot/bot_state.json
+          key: inclusion-bot-state-${{ github.run_id }}

@@ -1,0 +1,13 @@
+{
+  "notional": 10000,
+  "max_open_per_index": 1,
+  "max_hold_sessions": 21,
+  "state_path": "bot_state.json",
+  "cache_dir": ".cache",
+  "indices": {
+    "FTSE100": {"expected_effect": 0.02, "buffer": 2, "pre_cutoff_days": 10},
+    "DAX40":   {"expected_effect": 0.015},
+    "NDX100":  {"expected_effect": 0.01, "pre_cutoff_days": 15},
+    "SPX500":  {"expected_effect": 0.005, "min_cap": 22.7e9, "enabled": true}
+  }
+}

@@ -207,7 +207,7 @@ def plot(*, results: pd.Series,
         filename = _windos_safe_filename(str(results._strategy))
     _bokeh_reset(filename)
 
-    COLORS = [BEAR_COLOR, BULL_COLOR]
+    COLORS = [BEAR_COLOR.to_css(), BULL_COLOR.to_css()]
     BAR_WIDTH = .8
 
     assert df.index.equals(results['_equity_curve'].index)

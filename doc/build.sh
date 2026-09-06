@@ -8,7 +8,7 @@ for cmd in pdoc3    \
            jupytext \
            jupyter-nbconvert; do
     command -v "$cmd" >/dev/null ||
-        die "Missing $cmd; \`pip install backtesting[doc]\`"
+        die "Missing $cmd; \`uv sync --extra doc\` and run me via \`uv run doc/build.sh\`"
 done
 
 DOCROOT="$(dirname "$(readlink -f "$0")")"

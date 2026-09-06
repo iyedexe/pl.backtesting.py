@@ -1,15 +1,12 @@
 from __future__ import annotations
 
 import os
-import sys
 import warnings
 from contextlib import contextmanager
 from functools import partial
 from itertools import chain
-from multiprocessing import resource_tracker as _mprt
 from multiprocessing import shared_memory as _mpshm
 from numbers import Number
-from threading import Lock
 from typing import Dict, List, Optional, Sequence, Union, cast
 
 import numpy as np
@@ -248,26 +245,7 @@ class _Data:
         self.__dict__ = state
 
 
-if sys.version_info >= (3, 13):
-    SharedMemory = _mpshm.SharedMemory
-else:
-    class SharedMemory(_mpshm.SharedMemory):
-        # From https://github.com/python/cpython/issues/82300#issuecomment-2169035092
-        __lock = Lock()
-
-        def __init__(self, *args, track: bool = True, **kwargs):
-            self._track = track
-            if track:
-                return super().__init__(*args, **kwargs)
-            with self.__lock:
-                with patch(_mprt, 'register', lambda *a, **kw: None):
-                    super().__init__(*args, **kwargs)
-
-        def unlink(self):
-            if _mpshm._USE_POSIX and self._name:
-                _mpshm._posixshmem.shm_unlink(self._name)
-                if self._track:
-                    _mprt.unregister(self._name, "shared_memory")
+SharedMemory = _mpshm.SharedMemory  # Python 3.13+ supports SharedMemory(track=)
 
 
 class SharedMemoryManager:

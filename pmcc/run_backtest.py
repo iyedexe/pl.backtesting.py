@@ -186,7 +186,8 @@ def main(mode: str = 'all', window: dict | None = None):
         report.build()
 
 
-if __name__ == '__main__':
+def cli(argv: list[str] | None = None) -> None:
+    """Console entry point (``pmcc`` script and ``python -m pmcc.run_backtest``)."""
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument('mode', nargs='?', default='all',
                     choices=['headline', 'sensitivity', 'all'])
@@ -194,5 +195,9 @@ if __name__ == '__main__':
     ap.add_argument('--end', help='backtest window end, YYYY-MM-DD')
     ap.add_argument('--initial', type=float, help='starting capital in EUR '
                                                   f'(default {INITIAL:.0f})')
-    a = ap.parse_args()
+    a = ap.parse_args(argv)
     main(a.mode, window={'start': a.start, 'end': a.end, 'initial': a.initial})
+
+
+if __name__ == '__main__':
+    cli()

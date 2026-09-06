@@ -43,18 +43,18 @@ accompanied by [respective fixes/PRs].
 Installation
 ------------
 To install a _developmental_ version of the project,
-first [fork the project]. Then:
+first [fork the project]. The project is managed with [uv]. Then:
 
     git clone git@github.com:YOUR_USERNAME/backtesting.py
     cd backtesting.py
-    uv sync --extra doc --extra test --extra dev
+    uv sync --all-extras
 
-This project is [uv]-managed (`pyproject.toml` + `uv.lock`); run tools with
-`uv run <cmd>`. Plain pip still works too: `pip install -e '.[doc,test,dev]'`.
-
-[uv]: https://docs.astral.sh/uv/
+This creates `.venv/` with the project installed in editable mode along
+with all `doc`, `test` and `dev` dependencies, pinned by `uv.lock`.
+Prefix commands with `uv run` to execute them in that environment.
 
 [fork the project]: https://help.github.com/articles/fork-a-repo/
+[uv]: https://docs.astral.sh/uv/
 
 
 Testing
@@ -63,12 +63,12 @@ Please write reasonable unit tests for any new / changed functionality.
 See _backtesting/test_ directory for existing tests.
 Before submitting a PR, ensure the tests pass:
 
-    python -m backtesting.test
+    uv run python -m backtesting.test
 
 Also ensure that idiomatic code style is respected by running:
 
-    flake8 backtesting
-    mypy backtesting
+    uv run flake8 backtesting
+    uv run mypy backtesting
 
 
 Documentation
