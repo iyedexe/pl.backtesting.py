@@ -49,9 +49,24 @@ class ExitReason(str, Enum):
     MANUAL = 'manual'
 
 
+#: Evidence kinds. "Trigger" kinds can start a scoring pass on their own; the others are
+#: context that is folded into the bundle (see `newsbot.aggregator`).
+KIND_NEWS = 'news'                    # headline / article
+KIND_FILING = 'filing'                # regulatory filing, press-release wire
+KIND_REGULATORY = 'regulatory'        # FDA / clinical-trial events
+KIND_EARNINGS_RESULT = 'earnings_result'    # reported EPS/revenue vs estimate (from a calendar API)
+KIND_EARNINGS_UPCOMING = 'earnings_upcoming'  # scheduled report date (context only)
+KIND_SENTIMENT = 'sentiment'          # provider-computed sentiment on an article
+KIND_SOCIAL = 'social'                # StockTwits / Reddit aggregate
+TRIGGER_KINDS = (KIND_NEWS, KIND_FILING, KIND_REGULATORY, KIND_EARNINGS_RESULT)
+
+
 @dataclass
 class NewsItem:
-    """A single headline as delivered by a `NewsSource`."""
+    """One piece of evidence about one or more tickers, as delivered by a `NewsSource`.
+
+    `kind` says what it is (see KIND_*), `meta` carries provider-specific numbers such as
+    a sentiment score, an EPS surprise or bull/bear counts, which the scorer can use."""
     id: str
     headline: str
     published: datetime
@@ -59,6 +74,8 @@ class NewsItem:
     summary: str = ''
     source: str = ''
     url: str = ''
+    kind: str = KIND_NEWS
+    meta: Dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self):
         self.published = to_utc(self.published)
@@ -88,7 +105,13 @@ class NewsItem:
             summary=str(d.get('summary') or d.get('description') or ''),
             source=str(d.get('source') or ''),
             url=str(d.get('url') or d.get('link') or ''),
+            kind=str(d.get('kind') or KIND_NEWS),
+            meta=dict(d.get('meta') or {}),
         )
+
+    @property
+    def is_trigger(self) -> bool:
+        return self.kind in TRIGGER_KINDS
 
 
 @dataclass

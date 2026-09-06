@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 from typing import Iterable, List, Optional, Set
 
 from .classifiers import Classifier, RuleClassifier
-from .models import NewsItem, Signal
+from .models import Classification, NewsItem, Signal
 
 log = logging.getLogger(__name__)
 
@@ -53,6 +53,24 @@ class SignalEngine:
             return self.target_pct
         return round(self.target_pct * (0.75 + 0.5 * max(0.0, min(1.0, score))), 6)
 
+    def passes(self, c: Classification) -> bool:
+        if c.score < self.min_score:
+            return False
+        if self.categories and c.category not in self.categories:
+            return False
+        return c.category not in self.blocked_categories
+
+    def build(self, ticker: str, c: Classification, trigger: NewsItem, now: datetime) -> Optional[Signal]:
+        """Signal from an already-computed (bundle) classification, or None if it does not qualify."""
+        ticker = ticker.upper()
+        if self.universe and ticker not in self.universe:
+            return None
+        if not self.passes(c):
+            return None
+        return Signal(ticker=ticker, news_id=trigger.id, headline=trigger.headline, score=c.score, category=c.category,
+                      created_at=now, expires_at=now + self.signal_ttl, target_pct=self.effective_target_pct(c.score),
+                      stop_pct=self.stop_pct, max_hold_days=self.max_hold_days)
+
     def evaluate(self, item: NewsItem, now: Optional[datetime] = None) -> List[Signal]:
         """Return zero or more signals (one per eligible ticker) for a news item."""
         tickers = [t for t in item.tickers if not self.universe or t in self.universe]
@@ -60,11 +78,7 @@ class SignalEngine:
             return []
         c = self.classifier.classify(item)
         log.debug('classified %r -> %.2f %s %s', item.headline, c.score, c.category, c.reasons)
-        if c.score < self.min_score:
-            return []
-        if self.categories and c.category not in self.categories:
-            return []
-        if c.category in self.blocked_categories:
+        if not self.passes(c):
             return []
         now = now or item.published
         return [Signal(ticker=t, news_id=item.id, headline=item.headline, score=c.score, category=c.category,

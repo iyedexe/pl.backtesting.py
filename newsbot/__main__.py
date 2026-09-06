@@ -5,6 +5,9 @@ Command line:
   python -m newsbot replay   --prices GOOG=backtesting/test/GOOG.csv --news newsbot/data/sample_news.json
   python -m newsbot run      --config config.yaml [--once]
   python -m newsbot status   --state newsbot_state.json
+  python -m newsbot sources  --config config.yaml            # fetch each configured source once
+  python -m newsbot score    --config config.yaml --news evidence.json --ticker AAPL   # dry-run the scorer
+  python -m newsbot backfill --source alpaca --tickers AAPL,MSFT --start 2022-01-01 --out news.json
 """
 from __future__ import annotations
 
@@ -12,13 +15,14 @@ import argparse
 import json
 import logging
 import sys
+from datetime import timedelta
 from pathlib import Path
 from typing import Dict
 
 from .bot import positions_table
 from .classifiers import RuleClassifier
 from .config import build_bot, load_config, merge_config
-from .models import NewsItem, utcnow
+from .models import NewsItem, to_utc, utcnow
 from .prices import load_ohlc_csv
 from .state import BotState
 
@@ -104,6 +108,100 @@ def cmd_run(args):
         bot.run(max_ticks=args.max_ticks)
 
 
+def cmd_sources(args):
+    from .config import _AlpacaHolder, build_extractor, build_source  # noqa: PLC0415
+    from .models import to_utc  # noqa: PLC0415
+    cfg = load_config(args.config)
+    since = utcnow() - timedelta(hours=args.since_hours)
+    alpaca = _AlpacaHolder(cfg)
+    extractor = build_extractor(cfg)
+    total = 0
+    for spec in cfg.get('sources', []):
+        name = spec.get('type')
+        try:
+            src = build_source(spec, cfg, alpaca, extractor)
+            items = src.fetch(since)
+        except Exception as e:  # noqa: BLE001
+            print(f'{name:<18} ERROR {type(e).__name__}: {e}')
+            continue
+        total += len(items)
+        print(f'{name:<18} {len(items):4d} item(s)')
+        for it in items[-args.show:]:
+            print(f'    {to_utc(it.published):%m-%d %H:%M} [{it.kind}] {"/".join(it.tickers)[:20]:<20} '
+                  f'{it.headline[:90]}')
+    print(f'\ntotal: {total}')
+
+
+def cmd_score(args):
+    from .aggregator import EvidenceStore  # noqa: PLC0415
+    from .config import build_engine, build_scorer  # noqa: PLC0415
+    cfg = load_config(args.config) if args.config else merge_config(None)
+    items = _load_news(args.news)
+    engine = build_engine(cfg)
+    store = EvidenceStore(window=timedelta(hours=args.window_hours), classifier=engine.classifier)
+    for it in items:
+        store.add(it)
+    scorer = build_scorer(cfg)
+    tickers = [args.ticker.upper()] if args.ticker else store.tickers()
+    now = utcnow() if not args.as_of else to_utc(args.as_of)
+    for t in tickers:
+        b = store.bundle(t, now)
+        if b is None:
+            print(f'{t}: no trigger evidence in window')
+            continue
+        c = scorer.score(b)
+        print(f'\n=== {t}  score {c.score:+.2f}  [{c.category}]  confidence {c.confidence:.2f}  '
+              f'items={len(b.items)} sources={b.sources}')
+        for r in c.reasons:
+            print(f'  - {r}')
+        if args.verbose:
+            print(b.describe())
+        sig = engine.build(t, c, b.trigger, now)
+        print('  -> SIGNAL' if sig else '  -> no signal (below min_score or filtered)')
+
+
+def cmd_backfill(args):
+    tickers = [t.strip().upper() for t in args.tickers.split(',') if t.strip()]
+    start, end = to_utc(args.start), (to_utc(args.end) if args.end else utcnow())
+    items = []
+    if args.source == 'alpaca':
+        from .alpaca import AlpacaClient, AlpacaNewsSource  # noqa: PLC0415
+        src = AlpacaNewsSource(AlpacaClient(), symbols=tickers)
+        for n, it in enumerate(src.backfill(start, end), 1):
+            items.append(it)
+            if n % 500 == 0:
+                print(f'  {n} items, up to {it.published:%Y-%m-%d}', file=sys.stderr)
+    elif args.source == 'finnhub':
+        from .providers import FinnhubNews  # noqa: PLC0415
+        src = FinnhubNews(tickers, min_interval=0)
+        day = start
+        while day < end:
+            chunk_end = min(day + timedelta(days=30), end)
+            for t in tickers:
+                data = src._get(f'{src.BASE}/company-news', symbol=t, **{'from': day.date().isoformat()},
+                                to=chunk_end.date().isoformat(), token=src.api_key)
+                items += FinnhubNews.parse(data or [], t)
+            day = chunk_end
+    else:
+        raise SystemExit(f'unknown backfill source {args.source}')
+    seen = set()
+    out = []
+    for it in sorted(items, key=lambda i: i.published):
+        if it.id in seen:
+            continue
+        seen.add(it.id)
+        out.append(it.to_dict())
+    if args.append and Path(args.out).exists():
+        with open(args.out, encoding='utf-8') as f:
+            old = json.load(f)
+        old = old['news'] if isinstance(old, dict) else old
+        ids = {r.get('id') for r in old}
+        out = old + [r for r in out if r['id'] not in ids]
+    with open(args.out, 'w', encoding='utf-8') as f:
+        json.dump(out, f, indent=1)
+    print(f'wrote {len(out)} items to {args.out}')
+
+
 def cmd_status(args):
     state = BotState(args.state)
     print(f'last poll: {state.last_poll}')
@@ -116,6 +214,11 @@ def cmd_status(args):
     print(f'\nclosed trades ({len(state.closed)}):')
     for t in state.closed[-20:]:
         print(f'  {t.ticker:<6} {t.reason:<6} {t.return_pct:+6.2f}%  pnl={t.pnl:9.2f}  {t.headline[:60]}')
+    print(f'\nrecent scoring decisions ({len(state.decisions)}):')
+    for d in state.decisions[-15:]:
+        flag = 'SIGNAL' if d.get('signal') else '      '
+        print(f'  {d["time"][:16]} {flag} {d["ticker"]:<6} {d["score"]:+.2f} {d["category"]:<18} '
+              f'{d.get("items", 0):3d} items  {d["trigger"][:60]}')
 
 
 def main(argv=None):
@@ -157,6 +260,29 @@ def main(argv=None):
     p.add_argument('--once', action='store_true', help='single tick then exit')
     p.add_argument('--max-ticks', dest='max_ticks', type=int)
     p.set_defaults(fn=cmd_run)
+
+    p = sub.add_parser('sources', help='fetch every configured source once and show what came back')
+    p.add_argument('--config', required=True)
+    p.add_argument('--since-hours', dest='since_hours', type=float, default=24)
+    p.add_argument('--show', type=int, default=3, help='headlines to print per source')
+    p.set_defaults(fn=cmd_sources)
+
+    p = sub.add_parser('score', help='score evidence from a news file with the configured scorer (dry run)')
+    p.add_argument('--news', required=True)
+    p.add_argument('--config')
+    p.add_argument('--ticker')
+    p.add_argument('--as-of', dest='as_of', help='ISO time to evaluate at (default: now)')
+    p.add_argument('--window-hours', dest='window_hours', type=float, default=24)
+    p.set_defaults(fn=cmd_score)
+
+    p = sub.add_parser('backfill', help='download historical news into the JSON format used by backtest/replay')
+    p.add_argument('--source', choices=['alpaca', 'finnhub'], default='alpaca')
+    p.add_argument('--tickers', required=True, help='comma separated')
+    p.add_argument('--start', required=True)
+    p.add_argument('--end')
+    p.add_argument('--out', required=True)
+    p.add_argument('--append', action='store_true')
+    p.set_defaults(fn=cmd_backfill)
 
     p = sub.add_parser('status', help='show persisted state')
     p.add_argument('--state', default='newsbot_state.json')

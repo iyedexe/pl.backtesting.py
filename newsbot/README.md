@@ -1,8 +1,11 @@
 # newsbot — news-driven long-only equity bot (max one-week hold)
 
-`newsbot` listens to company news (earnings, guidance, FDA decisions, upgrades, buybacks,
-takeovers, ...), scores each headline, and opens a **long** position when the score clears a
-threshold. Every position carries three exits from the moment it is filled:
+`newsbot` gathers evidence about each ticker from many sources (news APIs, press-release feeds,
+provider sentiment, reported earnings vs consensus, FDA and clinical-trial events, social chatter),
+aggregates it per ticker, scores the whole bundle with an AI model (or a deterministic rule ensemble),
+and turns qualifying scores into **long** signals. A signal can place the order itself, send a
+Telegram message, hit a webhook, or any combination. Every position carries three exits from the
+moment it is filled:
 
 | exit   | rule                                                            |
 |--------|-----------------------------------------------------------------|
@@ -16,7 +19,7 @@ The same code path runs in three modes:
   for stops/targets and per-ticker statistics;
 * **replay** — the live bot loop (sources → signals → paper broker → exits) driven by a simulated
   clock over CSV prices and a news file;
-* **run** — live polling of RSS / Yahoo / Alpaca news, paper or real Alpaca account.
+* **run** — live polling of every configured source, paper or real Alpaca account, or notify-only.
 
 ## Quick start
 
@@ -34,9 +37,15 @@ python -m newsbot backtest --prices GOOG=backtesting/test/GOOG.csv --news newsbo
 python -m newsbot replay --prices GOOG=backtesting/test/GOOG.csv --news newsbot/data/sample_news.json
 
 # 4. paper-trade live headlines
-cp config.example.yaml config.yaml   # edit universe / sources / broker
+cp config.example.yaml config.yaml   # edit universe / sources / scoring / actions / broker
+python -m newsbot sources --config config.yaml    # fetch every source once, see what comes back
 python -m newsbot run --config config.yaml        # Ctrl-C to stop; state survives restarts
 python -m newsbot status --state newsbot_state.json
+
+# 5. build a real backtest dataset (free Alpaca paper account) and dry-run the scorer on it
+python -m newsbot backfill --source alpaca --tickers AAPL,MSFT --start 2022-01-01 --out news.json
+python -m newsbot backtest --prices AAPL=aapl.csv --news news.json
+python -m newsbot score --config config.yaml --news news.json --ticker AAPL --as-of 2023-05-05T00:00:00Z
 ```
 
 `newsbot/data/sample_news.json` is **synthetic**: headlines were placed on real GOOG trading days
@@ -46,25 +55,64 @@ your own history (same JSON/CSV schema: `published`, `tickers`, `headline`, `sum
 ## Architecture
 
 ```
-sources.py      NewsSource      -> FileNewsSource | RSSNewsSource | YahooFinanceRSS | AlpacaNewsSource
-classifiers/    Classifier      -> RuleClassifier (regex, no deps) | ClaudeClassifier (anthropic SDK)
-signals.py      SignalEngine    news + classification -> Signal(ticker, target_pct, stop_pct, max_hold_days, ttl)
+sources.py      NewsSource      -> File | RSS | YahooFinanceRSS | GoogleNewsRSS | NasdaqRSS
+providers/      APISource       -> Finnhub (news, earnings calendar) | AlphaVantage sentiment | Polygon |
+                                   Marketaux | NewsAPI | FMP (news, calendar) | Nasdaq calendar |
+                                   FDA press RSS | openFDA approvals | ClinicalTrials.gov | StockTwits | Reddit
+alpaca.py       Alpaca          news (+ historical backfill), latest prices, bracket-order broker
+aggregator.py   EvidenceStore   per-ticker window of NewsItems -> Bundle (items + numeric features)
+scoring.py      Scorer          -> RuleScorer (ensemble) | ClaudeScorer (AI reads the whole bundle)
+classifiers/    Classifier      per-headline regex scoring (bundle features + backtests)
+signals.py      SignalEngine    score -> Signal(ticker, target_pct, stop_pct, max_hold_days, ttl)
+actions.py      Action          -> TradeAction | TelegramAction | WebhookAction | LogAction
 prices.py       PriceFeed       -> StaticPriceFeed | CSVPriceFeed | YFinancePriceFeed | AlpacaPriceFeed
 brokers.py      Broker          -> PaperBroker | AlpacaBroker (bracket orders, paper endpoint by default)
-bot.py          NewsTradingBot  tick(): poll_news -> manage_positions -> execute_signals -> save state
-state.py        BotState        JSON persistence (positions, pending signals, seen ids, trade log)
+bot.py          NewsTradingBot  tick(): poll -> store -> score dirty tickers -> actions -> exits -> entries
+state.py        BotState        JSON persistence (positions, pending, evidence, decisions, trade log)
 strategy.py     NewsStrategy    backtesting.py Strategy + run_news_backtest() for many tickers
 replay.py       run_replay()    live loop over history with SimClock
 config.py       build_bot()     wire everything from a YAML/JSON dict
 ```
+
+### Evidence, bundles and scoring
+
+Every item carries a `kind`:
+
+| kind | examples | role |
+|------|----------|------|
+| `news`, `filing` | headlines, press releases, Nasdaq wire | **trigger** (fresh within `max_news_age_minutes`) |
+| `earnings_result` | Finnhub / FMP calendar: EPS and revenue vs consensus, surprise % | **trigger** (fresh within `max_event_age_hours`) |
+| `regulatory` | FDA press release, openFDA approval, clinical-trial status change | **trigger** |
+| `sentiment` | Alpha Vantage / Marketaux per-ticker sentiment, Polygon insights | context |
+| `earnings_upcoming` | scheduled report date and time | context |
+| `social` | one aggregate per poll: StockTwits bull/bear counts, Reddit mentions | context (weak) |
+
+On each tick every new item goes into the `EvidenceStore` (default 24 h window per ticker). Tickers that
+received a *fresh trigger* are scored **once per tick** over their whole bundle. The bundle exposes
+features (recency-weighted rule scores, provider sentiment mean, latest earnings surprise, regulatory
+prior, social tilt, source count) and a chronological text rendering.
+
+* `RuleScorer` combines those features deterministically (weights in `scoring.py`).
+* `ClaudeScorer` sends the rendering plus the features to the model with a strict JSON schema and
+  returns `score / category / confidence / reasons`. On any API failure it falls back to `RuleScorer`
+  and tags the reasons with `fallback:rules`. Duplicated headlines across providers are one event.
+
+Every scoring pass is logged in the state file (`decisions`) whether or not it produced a signal, so
+you can audit what the model saw and decided: `python -m newsbot status`.
+
+### Actions
+
+`actions:` in the config lists what a signal does. `trade` queues it for execution by the bot;
+`telegram` and `webhook` notify (signal, entry and exit events are each optional). Without a
+`trade` action the bot runs **notify-only**: it scores and alerts but never places an order.
 
 ### Signal rules (`SignalEngine`)
 
 * `RuleClassifier` sums the weights of every matching pattern (`classifiers/rules.py`) and clamps to
   [−1, 1]; bearish patterns are negative so "beats estimates **but cuts guidance**" nets negative.
   Add rows to `DEFAULT_RULES` (regex, category, weight) to extend it.
-* A signal is created when `score >= min_score` and the ticker is in `universe` (if set) and the
-  category passes the allow/deny lists.
+* A signal is created when the bundle `score >= min_score` and the ticker is in `universe` (if set)
+  and the category passes the allow/deny lists.
 * `target_pct` scales with the score when `scale_target_by_score` is on: ×1.0 at 0.5, ×1.25 at 1.0.
 * Signals live for `signal_ttl_hours` (18 h) so an after-close earnings release is bought at the
   next open; `max_chase_pct` skips the entry if price already gapped more than 5 % above the price
@@ -72,8 +120,10 @@ config.py       build_bot()     wire everything from a YAML/JSON dict
 
 ### Live loop (`NewsTradingBot.tick`)
 
-1. fetch headlines newer than `now − max_news_age` from every source, drop already-seen ids;
-2. score and queue signals (one per ticker; no duplicates for a ticker already held/queued);
+1. fetch evidence newer than `now − window` from every source (each source paces itself to its free
+   tier), drop already-seen ids, store the rest;
+2. score every ticker that got a fresh trigger, push qualifying signals to the actions, queue them
+   if a `trade` action is configured (one per ticker; none for a ticker already held/queued);
 3. for each open position: if the broker manages exits (Alpaca brackets) detect the leg fill,
    otherwise sell on target/stop; sell on time when `now >= exit_by`;
 4. fill queued signals, best score first, while `len(positions) < max_positions` and the market
@@ -118,11 +168,21 @@ broker:  {type: alpaca, paper: true}
 Entries are bracket market orders (take-profit limit + stop). The bot cancels the bracket legs and
 closes the position itself when the one-week deadline hits. Start with `paper: true`.
 
-## LLM classification (optional)
+## AI scoring (optional but recommended)
 
-`pip install anthropic`, set `ANTHROPIC_API_KEY`, and use `classifier: {type: claude}`. The model
-returns strict JSON (`score`, `category`, `confidence`, `reasons`); on any API failure the rule
-classifier is used so the loop keeps running.
+`pip install anthropic`, set `ANTHROPIC_API_KEY`, and use `scoring: {type: claude}`. One request per
+scoring pass (per ticker with fresh evidence, per tick), so cost scales with news flow rather than
+poll frequency. Test it offline on a news file without touching the live loop:
+
+```bash
+python -m newsbot score --config config.yaml --news news.json --ticker AAPL --as-of 2023-05-05T00:00:00Z
+```
+
+## Telegram
+
+Create a bot with @BotFather, get the token, send the bot a message, then read your chat id from
+`https://api.telegram.org/bot<TOKEN>/getUpdates`. Export `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`
+and add `- type: telegram` under `actions`. Remove `- type: trade` for alerts without orders.
 
 ## Tests
 

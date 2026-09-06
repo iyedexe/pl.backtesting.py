@@ -13,6 +13,7 @@ from .models import ClosedTrade, Position, Signal
 
 class BotState:
     MAX_SEEN = 20_000
+    MAX_DECISIONS = 500
 
     def __init__(self, path: Optional[Union[str, Path]] = None):
         self.path = Path(path) if path else None
@@ -21,6 +22,9 @@ class BotState:
         self.closed: List[ClosedTrade] = []
         self.seen: 'OrderedDict[str, None]' = OrderedDict()
         self.last_poll: Optional[str] = None
+        self.evidence: Dict[str, List[dict]] = {}     # EvidenceStore snapshot
+        self.decisions: List[dict] = []               # every scoring pass (signal or not)
+        self.last_scored: Dict[str, str] = {}         # ticker -> iso time of last scoring pass
         if self.path and self.path.exists():
             self.load()
 
@@ -33,6 +37,11 @@ class BotState:
     def has_seen(self, news_id: str) -> bool:
         return news_id in self.seen
 
+    def record_decision(self, d: dict) -> None:
+        self.decisions.append(d)
+        if len(self.decisions) > self.MAX_DECISIONS:
+            del self.decisions[:-self.MAX_DECISIONS]
+
     # -- io --------------------------------------------------------------
     def to_dict(self) -> dict:
         return {
@@ -41,6 +50,9 @@ class BotState:
             'closed': [t.to_dict() for t in self.closed],
             'seen': list(self.seen.keys()),
             'last_poll': self.last_poll,
+            'evidence': self.evidence,
+            'decisions': self.decisions[-self.MAX_DECISIONS:],
+            'last_scored': self.last_scored,
         }
 
     def load_dict(self, d: dict) -> None:
@@ -49,6 +61,9 @@ class BotState:
         self.closed = [ClosedTrade.from_dict(t) for t in d.get('closed', [])]
         self.seen = OrderedDict((k, None) for k in d.get('seen', []))
         self.last_poll = d.get('last_poll')
+        self.evidence = d.get('evidence', {})
+        self.decisions = d.get('decisions', [])
+        self.last_scored = d.get('last_scored', {})
 
     def load(self) -> None:
         assert self.path is not None

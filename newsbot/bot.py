@@ -2,7 +2,11 @@
 The trading loop.
 
 Each `tick()`:
-  1. pulls fresh headlines from every source, scores them, and queues `Signal`s;
+  1. pulls fresh evidence from every source into the per-ticker `EvidenceStore`;
+     tickers that received a fresh *trigger* item are re-scored once, over their
+     whole evidence bundle, by the configured `Scorer` (rules or AI model);
+     qualifying scores become `Signal`s that are pushed to every `Action`
+     (trade queue, Telegram, webhook);
   2. checks open positions for target / stop / time exits;
   3. fills queued signals while there is room (max positions, cash, market open);
   4. persists state.
@@ -17,10 +21,13 @@ import math
 from datetime import datetime, timedelta
 from typing import Callable, Dict, Iterable, List, Optional
 
+from .actions import Action, TradeAction
+from .aggregator import EvidenceStore
 from .brokers import Broker, BrokerError
 from .clock import Clock, SystemClock
-from .models import ClosedTrade, ExitReason, NewsItem, Position, Signal, to_utc
+from .models import KIND_FILING, KIND_NEWS, ClosedTrade, ExitReason, NewsItem, Position, Signal, to_utc
 from .prices import PriceFeed
+from .scoring import RuleScorer, Scorer
 from .signals import SignalEngine
 from .sources import CompositeNewsSource, NewsSource
 from .state import BotState
@@ -45,7 +52,11 @@ class NewsTradingBot:
                  max_chase_pct: Optional[float] = 0.05,
                  market_hours_only: bool = True,
                  poll_interval: float = 60.0,
-                 on_event: Optional[Callable[[str, dict], None]] = None):
+                 on_event: Optional[Callable[[str, dict], None]] = None,
+                 store: Optional[EvidenceStore] = None,
+                 scorer: Optional[Scorer] = None,
+                 actions: Optional[List[Action]] = None,
+                 max_event_age: timedelta = timedelta(hours=12)):
         """
         max_positions: concurrent open longs.
         position_size_pct: notional per position as a fraction of equity.
@@ -53,6 +64,10 @@ class NewsTradingBot:
         max_news_age: ignore headlines older than this when first seen (protects against stale feeds at startup).
         max_chase_pct: skip an entry if price already ran more than this above the price seen at signal time.
         market_hours_only: only trade while `broker.is_market_open()`; signals wait in the queue until then.
+        store / scorer: evidence aggregation window and the bundle scorer (RuleScorer by default).
+        actions: what a signal does. Default [TradeAction()]. Without a TradeAction the bot only notifies.
+        max_event_age: freshness limit for non-headline triggers (reported earnings, regulatory events),
+            which providers often publish with the event's date rather than the moment we learn of it.
         """
         self.source = CompositeNewsSource(sources)
         self.engine = engine
@@ -70,6 +85,13 @@ class NewsTradingBot:
         self.market_hours_only = market_hours_only
         self.poll_interval = poll_interval
         self._on_event = on_event
+        self.store = store or EvidenceStore(classifier=engine.classifier, universe=engine.universe or None)
+        self.scorer = scorer or RuleScorer()
+        self.actions = list(actions) if actions is not None else [TradeAction()]
+        self.execute_trades = any(a.executes_trades for a in self.actions)
+        self.max_event_age = max_event_age
+        if self.state.evidence:
+            self.store.load_dict(self.state.evidence)
 
     # ------------------------------------------------------------ helpers
     def _emit(self, kind: str, **payload) -> None:
@@ -79,37 +101,76 @@ class NewsTradingBot:
     def _market_open(self, now: datetime) -> bool:
         return (not self.market_hours_only) or self.broker.is_market_open(now)
 
+    def _dispatch(self, event: str, *args) -> None:
+        for a in self.actions:
+            try:
+                getattr(a, f'on_{event}')(*args)
+            except Exception:  # noqa: BLE001 — a failing notifier must not stop trading
+                log.exception('action %s failed on %s', a.name, event)
+
     # ------------------------------------------------------------ 1. news
     def ingest(self, items: Iterable[NewsItem], now: Optional[datetime] = None) -> List[Signal]:
-        """Score news items and queue signals. Returns the newly queued signals."""
+        """Store new evidence, re-score tickers that got a fresh trigger, emit signals. Returns new signals."""
         now = now or self.clock.now()
-        queued: List[Signal] = []
+        dirty: Dict[str, NewsItem] = {}          # ticker -> newest fresh trigger
         for item in items:
             if self.state.has_seen(item.id):
                 continue
             if item.published > now:          # replay: not published yet
                 continue
             self.state.mark_seen(item.id)
-            if now - item.published > self.max_news_age:
-                log.debug('skipping stale news (%s): %s', item.published, item.headline)
+            age = now - item.published
+            if age > self.store.window:
                 continue
-            for sig in self.engine.evaluate(item, now):
-                if sig.ticker in self.state.positions:
-                    log.info('signal for %s ignored: already holding', sig.ticker)
-                    continue
-                if any(p.ticker == sig.ticker for p in self.state.pending.values()):
-                    continue
-                sig.reference_price = self.feed.price(sig.ticker)
+            affected = self.store.add(item)
+            if not affected or not item.is_trigger:
+                continue
+            limit = self.max_news_age if item.kind in (KIND_NEWS, KIND_FILING) else self.max_event_age
+            if age > limit:
+                log.debug('stale %s (%s old) kept as context only: %s', item.kind, age, item.headline)
+                continue
+            for t in affected:
+                if t not in dirty or item.published >= dirty[t].published:
+                    dirty[t] = item
+        self.store.prune(now)
+
+        signals: List[Signal] = []
+        for ticker, trigger in dirty.items():
+            if ticker in self.state.positions:
+                log.info('%s: new evidence ignored for scoring, already holding', ticker)
+                continue
+            if any(p.ticker == ticker for p in self.state.pending.values()):
+                continue
+            bundle = self.store.bundle(ticker, now, trigger)
+            if bundle is None:
+                continue
+            c = self.scorer.score(bundle)
+            self.state.last_scored[ticker] = now.isoformat()
+            sig = self.engine.build(ticker, c, trigger, now)
+            self.state.record_decision({
+                'time': now.isoformat(), 'ticker': ticker, 'score': c.score, 'category': c.category,
+                'confidence': c.confidence, 'reasons': c.reasons, 'trigger': trigger.headline,
+                'items': len(bundle.items), 'sources': bundle.sources, 'signal': sig is not None})
+            log.info('SCORE %s %+.2f %s conf=%.2f items=%d sources=%s :: %s', ticker, c.score, c.category, c.confidence,
+                     len(bundle.items), ','.join(bundle.sources), trigger.headline)
+            if sig is None:
+                continue
+            sig.reference_price = self.feed.price(ticker)
+            log.info('SIGNAL %s score=%.2f %s tp=+%.1f%% sl=-%.1f%% :: %s',
+                     sig.ticker, sig.score, sig.category, sig.target_pct * 100, sig.stop_pct * 100, sig.headline)
+            self._dispatch('signal', sig, c, bundle.describe(10))
+            self._emit('signal', signal=sig, classification=c, bundle=bundle)
+            if self.execute_trades:
                 self.state.pending[sig.id] = sig
-                queued.append(sig)
-                log.info('SIGNAL %s score=%.2f %s tp=+%.1f%% sl=-%.1f%% :: %s',
-                         sig.ticker, sig.score, sig.category, sig.target_pct * 100, sig.stop_pct * 100, sig.headline)
-                self._emit('signal', signal=sig, item=item)
-        return queued
+            signals.append(sig)
+        self.state.evidence = self.store.to_dict()
+        return signals
 
     def poll_news(self, now: Optional[datetime] = None) -> List[Signal]:
+        """Fetch as far back as the evidence window: context (sentiment, reported numbers, social) is useful
+        for a day; only *triggers* are held to `max_news_age` / `max_event_age` freshness in `ingest`."""
         now = now or self.clock.now()
-        since = now - self.max_news_age
+        since = now - max(self.max_news_age, self.store.window)
         return self.ingest(self.source.fetch(since), now)
 
     # ------------------------------------------------------------ 2. exits
@@ -131,6 +192,7 @@ class NewsTradingBot:
         del self.state.positions[pos.ticker]
         log.info('EXIT %s (%s) x%g @ %.4f  pnl=%.2f (%.2f%%) held %s', pos.ticker, reason.value, pos.qty, exit_price,
                  trade.pnl, trade.return_pct, exit_time - pos.entry_time)
+        self._dispatch('exit', trade)
         self._emit('exit', trade=trade, position=pos)
 
     def manage_positions(self, now: Optional[datetime] = None) -> None:
@@ -220,6 +282,7 @@ class NewsTradingBot:
             opened.append(pos)
             log.info('ENTRY %s x%g @ %.4f  target=%.4f stop=%.4f exit_by=%s', pos.ticker, pos.qty, pos.entry_price,
                      pos.target_price, pos.stop_price, pos.exit_by.isoformat(timespec='minutes'))
+            self._dispatch('entry', pos)
             self._emit('entry', position=pos, signal=sig)
         return opened
 
@@ -234,8 +297,9 @@ class NewsTradingBot:
 
     def run(self, max_ticks: Optional[int] = None) -> None:
         ticks = 0
-        log.info('news bot started: %d source(s), max %d positions, %s',
-                 len(self.source.sources), self.max_positions, type(self.broker).__name__)
+        log.info('news bot started: %d source(s), scorer=%s, actions=%s, mode=%s, max %d positions, %s',
+                 len(self.source.sources), type(self.scorer).__name__, [a.name for a in self.actions],
+                 'trade' if self.execute_trades else 'notify-only', self.max_positions, type(self.broker).__name__)
         try:
             while max_ticks is None or ticks < max_ticks:
                 try:
@@ -256,6 +320,11 @@ class NewsTradingBot:
         closed = self.state.closed
         wins = [t for t in closed if t.pnl > 0]
         return {
+            'mode': 'trade' if self.execute_trades else 'notify-only',
+            'scorer': type(self.scorer).__name__,
+            'signals': sum(1 for d in self.state.decisions if d.get('signal')),
+            'scored': len(self.state.decisions),
+            'evidence_tickers': len(self.store.tickers()),
             'equity': round(self.broker.equity(), 2),
             'cash': round(self.broker.cash(), 2),
             'open_positions': len(self.state.positions),

@@ -11,7 +11,7 @@ import logging
 import os
 import time
 from datetime import datetime, timezone
-from typing import Dict, Iterable, List, Optional
+from typing import Dict, Iterable, Iterator, List, Optional
 
 from .brokers import Broker, BrokerError, BrokerPosition
 from .models import Fill, NewsItem, to_utc
@@ -82,6 +82,28 @@ class AlpacaNewsSource(NewsSource):
                                   source=n.get('source', 'alpaca'), url=n.get('url', '') or ''))
         items.sort(key=lambda i: i.published)
         return items
+
+    def backfill(self, start: datetime, end: Optional[datetime] = None, *, page_size: int = 50,
+                 max_pages: int = 10_000) -> Iterator[NewsItem]:
+        """Page through historical news (Alpaca keeps Benzinga history back to ~2015). Yields oldest first
+        per page; the CLI `backfill` command collects and sorts. Rate-limit friendly: one request per page."""
+        params: Dict[str, object] = {'limit': page_size, 'sort': 'asc', 'include_content': 'false',
+                                     'start': to_utc(start).strftime('%Y-%m-%dT%H:%M:%SZ')}
+        if end is not None:
+            params['end'] = to_utc(end).strftime('%Y-%m-%dT%H:%M:%SZ')
+        if self.symbols:
+            params['symbols'] = ','.join(self.symbols)
+        for _ in range(max_pages):
+            data = self.client.get('/v1beta1/news', base=DATA_URL, **params) or {}
+            for n in data.get('news', []):
+                yield NewsItem(id=f'alpaca:{n["id"]}', headline=n.get('headline', ''),
+                               published=to_utc(n.get('created_at') or n.get('updated_at')),
+                               tickers=n.get('symbols', []), summary=n.get('summary', '') or '',
+                               source=n.get('source', 'alpaca'), url=n.get('url', '') or '')
+            token = data.get('next_page_token')
+            if not token:
+                break
+            params['page_token'] = token
 
 
 class AlpacaPriceFeed(PriceFeed):

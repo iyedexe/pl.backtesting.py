@@ -18,9 +18,10 @@ from abc import ABC, abstractmethod
 from datetime import datetime
 from email.utils import parsedate_to_datetime
 from pathlib import Path
-from typing import Iterable, List, Optional, Sequence, Set
+from typing import Iterable, List, Mapping, Optional, Sequence, Set, Tuple
 
-from .models import NewsItem, to_utc
+from .http import RateLimiter, get_text
+from .models import KIND_NEWS, NewsItem, to_utc
 
 log = logging.getLogger(__name__)
 
@@ -41,12 +42,18 @@ _CASHTAG_RX = re.compile(r'(?<![\w$])\$([A-Z]{1,5})\b')
 
 
 class TickerExtractor:
-    """Find ticker symbols mentioned in free text."""
+    """Find ticker symbols mentioned in free text: "(NASDAQ: XYZ)", "$XYZ", bare known symbols,
+    and company-name aliases (`{'AAPL': ['Apple', 'Apple Inc.']}`), which matter for sources that
+    never print tickers (FDA, general news)."""
 
-    def __init__(self, known: Optional[Iterable[str]] = None):
+    def __init__(self, known: Optional[Iterable[str]] = None, aliases: Optional[Mapping[str, Iterable[str]]] = None):
         self.known: Set[str] = {k.upper() for k in known} if known else set()
         self._known_rx = re.compile(r'\b(' + '|'.join(re.escape(k) for k in sorted(self.known)) + r')\b') \
             if self.known else None
+        self._aliases: List[Tuple[re.Pattern, str]] = []
+        for ticker, names in (aliases or {}).items():
+            for name in ([names] if isinstance(names, str) else names):
+                self._aliases.append((re.compile(r'\b' + re.escape(name) + r'\b', re.IGNORECASE), ticker.upper()))
 
     def extract(self, text: str) -> List[str]:
         found: List[str] = []
@@ -54,6 +61,9 @@ class TickerExtractor:
             found += [m.upper() for m in rx.findall(text)]
         if self._known_rx:
             found += self._known_rx.findall(text)
+        for rx, ticker in self._aliases:
+            if rx.search(text):
+                found.append(ticker)
         seen: Set[str] = set()
         return [t for t in found if not (t in seen or seen.add(t))]  # type: ignore[func-returns-value]
 
@@ -94,7 +104,7 @@ class FileNewsSource(NewsSource):
 
 # ---------------------------------------------------------------- rss
 
-def parse_rss(xml_text: str, *, source: str = 'rss') -> List[NewsItem]:
+def parse_rss(xml_text: str, *, source: str = 'rss', kind: str = KIND_NEWS) -> List[NewsItem]:
     """Parse RSS 2.0 or Atom into NewsItems (tickers left empty)."""
     root = ET.fromstring(xml_text)
     items: List[NewsItem] = []
@@ -132,36 +142,44 @@ def parse_rss(xml_text: str, *, source: str = 'rss') -> List[NewsItem]:
         guid = _text(e, 'guid', 'atom:id') or link or f'{title}|{published.isoformat()}'
         summary = re.sub(r'<[^>]+>', ' ', _text(e, 'description', 'atom:summary', 'atom:content', 'summary'))
         items.append(NewsItem(id=f'{source}:{guid}', headline=title, published=published,
-                              summary=' '.join(summary.split())[:2000], source=source, url=link))
+                              summary=' '.join(summary.split())[:2000], source=source, url=link, kind=kind))
     return items
 
 
 class RSSNewsSource(NewsSource):
-    """Generic RSS/Atom source. Uses `requests` (already a dependency) with a short timeout."""
+    """Generic RSS/Atom source. `tickers` pins every item to fixed symbols (per-ticker feeds);
+    otherwise symbols are extracted from the text."""
 
     def __init__(self, url: str, *, name: Optional[str] = None, tickers: Optional[Iterable[str]] = None,
-                 extractor: Optional[TickerExtractor] = None, timeout: float = 10.0):
+                 extractor: Optional[TickerExtractor] = None, timeout: float = 10.0, kind: str = KIND_NEWS,
+                 min_interval: float = 0.0, strip_suffix: bool = False):
         self.url = url
         self.name = name or f'rss:{re.sub(r"^https?://", "", url)[:40]}'
         self.fixed_tickers = [t.upper() for t in tickers] if tickers else []
         self.extractor = extractor or TickerExtractor()
         self.timeout = timeout
+        self.kind = kind
+        self.strip_suffix = strip_suffix       # Google News appends " - Publisher" to titles
+        self._limiter = RateLimiter(min_interval)
 
-    def _download(self) -> str:
-        import requests  # noqa: PLC0415
-        r = requests.get(self.url, timeout=self.timeout, headers={'User-Agent': 'newsbot/1.0'})
-        r.raise_for_status()
-        return r.text
+    def _download(self) -> Optional[str]:
+        return get_text(self.url, timeout=self.timeout)
 
     def fetch(self, since: Optional[datetime] = None) -> List[NewsItem]:
+        if not self._limiter.ready():
+            return []
+        xml_text = self._download()
+        if not xml_text:
+            return []
         try:
-            xml_text = self._download()
-            items = parse_rss(xml_text, source=self.name)
-        except Exception as e:  # noqa: BLE001 — network / parse errors must not kill the loop
-            log.warning('%s: fetch failed: %s', self.name, e)
+            items = parse_rss(xml_text, source=self.name, kind=self.kind)
+        except Exception as e:  # noqa: BLE001 — parse errors must not kill the loop
+            log.warning('%s: parse failed: %s', self.name, e)
             return []
         out = []
         for it in items:
+            if self.strip_suffix and ' - ' in it.headline:
+                it.headline = it.headline.rsplit(' - ', 1)[0]
             it.tickers = self.fixed_tickers or self.extractor.extract(f'{it.headline} {it.summary}')
             if since is not None and it.published <= to_utc(since):
                 continue
@@ -169,13 +187,19 @@ class RSSNewsSource(NewsSource):
         return out
 
 
-class YahooFinanceRSS(NewsSource):
-    """One Yahoo Finance headline feed per ticker."""
-    name = 'yahoo'
-    URL = 'https://feeds.finance.yahoo.com/rss/2.0/headline?s={ticker}&region=US&lang=en-US'
+class PerTickerRSS(NewsSource):
+    """One RSS feed per ticker built from a URL template."""
+    name = 'per-ticker-rss'
+    URL = ''
+    KIND = KIND_NEWS
+    STRIP_SUFFIX = False
 
-    def __init__(self, tickers: Iterable[str], timeout: float = 10.0):
-        self.feeds = [RSSNewsSource(self.URL.format(ticker=t), name=f'yahoo:{t}', tickers=[t], timeout=timeout)
+    def __init__(self, tickers: Iterable[str], timeout: float = 10.0, min_interval: float = 0.0,
+                 url: Optional[str] = None):
+        template = url or self.URL
+        self.feeds = [RSSNewsSource(template.format(ticker=t, ticker_lower=t.lower()), name=f'{self.name}:{t}',
+                                    tickers=[t], timeout=timeout, kind=self.KIND, min_interval=min_interval,
+                                    strip_suffix=self.STRIP_SUFFIX)
                       for t in tickers]
 
     def fetch(self, since: Optional[datetime] = None) -> List[NewsItem]:
@@ -183,6 +207,26 @@ class YahooFinanceRSS(NewsSource):
         for f in self.feeds:
             out += f.fetch(since)
         return out
+
+
+class YahooFinanceRSS(PerTickerRSS):
+    """Yahoo Finance headline feed per ticker (no key, minutes of latency)."""
+    name = 'yahoo'
+    URL = 'https://feeds.finance.yahoo.com/rss/2.0/headline?s={ticker}&region=US&lang=en-US'
+
+
+class GoogleNewsRSS(PerTickerRSS):
+    """Google News search feed per ticker (no key). Titles carry a " - Publisher" suffix that is stripped."""
+    name = 'google'
+    URL = 'https://news.google.com/rss/search?q={ticker}+stock&hl=en-US&gl=US&ceid=US:en'
+    STRIP_SUFFIX = True
+
+
+class NasdaqRSS(PerTickerRSS):
+    """Nasdaq.com press releases + articles per ticker (no key)."""
+    name = 'nasdaq'
+    URL = 'https://www.nasdaq.com/feed/rssoutbound?symbol={ticker}'
+    KIND = 'filing'
 
 
 class CompositeNewsSource(NewsSource):

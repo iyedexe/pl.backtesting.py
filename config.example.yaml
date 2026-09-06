@@ -1,28 +1,84 @@
 # newsbot configuration — copy to config.yaml and edit.
 # Run:  python -m newsbot run --config config.yaml
+# Check what every source returns first:  python -m newsbot sources --config config.yaml
 # Every key is optional; defaults are in newsbot/config.py (DEFAULT_CONFIG).
 
-# Tickers you are willing to trade. Empty list = any ticker the news names (RSS feeds
-# then rely on "(NASDAQ: XYZ)" / "$XYZ" patterns in the text to attribute headlines).
-universe: [AAPL, MSFT, NVDA, AMZN, GOOG, META, TSLA, AMD, NFLX, CRM]
+# Tickers you are willing to trade. Empty list = any ticker the news names (RSS feeds then rely
+# on "(NASDAQ: XYZ)" / "$XYZ" patterns in the text to attribute headlines).
+universe: [AAPL, MSFT, NVDA, AMZN, GOOG, META, TSLA, AMD, PFE, MRNA]
 
+# Company names per ticker. Needed for sources that never print tickers (FDA, general news,
+# ClinicalTrials.gov sponsors). Used by every text-extracting source.
+aliases:
+  AAPL: [Apple, "Apple Inc"]
+  PFE: [Pfizer]
+  MRNA: [Moderna]
+
+# Provider keys. Leave empty to read FINNHUB_API_KEY, ALPHAVANTAGE_API_KEY, POLYGON_API_KEY,
+# MARKETAUX_API_KEY, NEWSAPI_API_KEY, FMP_API_KEY from the environment. Alpaca uses
+# APCA_API_KEY_ID / APCA_API_SECRET_KEY. Sources whose key is missing are disabled with a warning.
+api_keys: {}
+
+# --- Evidence sources ---------------------------------------------------------------------
+# Every source drops items into a per-ticker evidence store. Kinds:
+#   news / filing / regulatory / earnings_result  -> TRIGGERS: a fresh one re-scores the ticker
+#   sentiment / social / earnings_upcoming        -> CONTEXT: folded into the next scoring pass
+# `min_interval_seconds` overrides the built-in free-tier pacing of a source.
 sources:
-  - type: yahoo                       # one Yahoo Finance headline feed per ticker in `universe`
-  # - type: rss                       # any RSS/Atom feed; tickers extracted from text
+  # Real-time, ticker-tagged, free with a paper account. Also the backfill source for backtests.
+  - type: alpaca
+  # Company news (60 calls/min free) and the earnings calendar with reported EPS vs consensus.
+  - type: finnhub
+  - type: finnhub_earnings
+  # Provider sentiment per ticker. Free tier ~25 requests/day -> one sweep per hour by default.
+  - type: alphavantage
+    min_interval_seconds: 3600
+  # Benzinga-sourced, delayed on the free tier (5 calls/min). One call per poll for the universe.
+  - type: polygon
+  # Small free tiers; each is one call per interval over the whole universe.
+  - type: marketaux
+  - type: newsapi
+    # queries: {AAPL: '"Apple Inc"'}     # optional search phrases per ticker
+  - type: fmp
+  - type: fmp_earnings
+  # No-key RSS feeds per ticker (minutes of latency).
+  - type: yahoo
+  - type: google
+  - type: nasdaq_rss                      # Nasdaq.com press releases per ticker (kind: filing)
+  # Upcoming report dates (context) from Nasdaq's public calendar.
+  - type: nasdaq_earnings
+  # Biotech catalysts. Tickers come from `aliases`.
+  - type: fda                             # FDA press announcements RSS
+  - type: openfda                         # Drugs@FDA approvals
+  - type: clinicaltrials                  # status changes for sponsors in `aliases` (or `sponsors: {PFE: [Pfizer]}`)
+  # Social (context only, weak weight).
+  - type: stocktwits
+  - type: reddit
+    subreddits: [wallstreetbets, stocks]
+  # Any other RSS/Atom feed, e.g. press-release wires:
+  # - type: rss
   #   url: https://www.globenewswire.com/RssFeed/subjectcode/12-Earnings%20Releases%20And%20Operating%20Results/feedTitle/GlobeNewswire%20-%20Earnings%20Releases%20And%20Operating%20Results
   #   name: globenewswire-earnings
-  # - type: alpaca                    # Benzinga news via Alpaca data API (needs APCA_API_KEY_ID / APCA_API_SECRET_KEY)
-  #   limit: 50
-  # - type: file                      # JSON/CSV file (replay / testing)
+  #   kind: filing
+  # - type: file                          # JSON/CSV file (replay / testing)
   #   path: newsbot/data/sample_news.json
 
+# --- Scoring ------------------------------------------------------------------------------
+# Per-headline rule scoring feeds the bundle features and the backtest strategy.
 classifier:
-  type: rules                         # rules | claude
-  # model: claude-opus-5              # used when type: claude (pip install anthropic, set ANTHROPIC_API_KEY)
-  # effort: low
+  type: rules
+
+# Bundle scorer: sees ALL evidence for a ticker inside `window_hours` and returns one score.
+scoring:
+  type: claude                        # claude | rules   (claude needs `pip install anthropic` + ANTHROPIC_API_KEY;
+                                      #                   any API failure falls back to the rule ensemble)
+  model: claude-opus-5
+  effort: medium                      # low | medium | high
+  window_hours: 24                    # evidence look-back per ticker
+  max_event_age_hours: 12             # freshness limit for reported earnings / regulatory triggers
 
 signals:
-  min_score: 0.5                      # classification score needed to go long (0..1)
+  min_score: 0.5                      # bundle score needed to go long (0..1)
   target_pct: 0.05                    # take-profit distance from fill (5%)
   stop_pct: 0.03                      # stop-loss distance from fill (3%)
   max_hold_days: 7                    # hard time exit, calendar days after entry (one week)
@@ -30,6 +86,17 @@ signals:
   scale_target_by_score: true         # stronger catalyst -> wider target (x1.0 @ 0.5 ... x1.25 @ 1.0)
   categories: []                      # optional allow-list, e.g. [earnings_beat, guidance_raise, fda_approval]
   blocked_categories: []              # optional deny-list, e.g. [partnership]
+
+# --- Actions: what a signal does. Any combination. ------------------------------------------
+# No `trade` entry = notify-only mode (score + alert, never place orders).
+actions:
+  - type: trade                       # queue the signal; the bot places the order (paper or Alpaca)
+  - type: telegram                    # TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID from env, or token:/chat_id: here
+    events: [signal, entry, exit]     # which events to send
+    include_evidence: true            # append the last evidence lines to signal messages
+  # - type: webhook
+  #   url: https://example.com/hook
+  #   events: [signal]
 
 prices:
   type: yfinance                      # yfinance | alpaca | static | csv
@@ -48,8 +115,8 @@ bot:
   risk_per_trade_pct: 0.01            # optional: cap size so a stop-out loses <= 1% of equity
   max_position_value: null            # optional absolute cap in dollars
   fractional_shares: false
-  max_news_age_minutes: 30            # ignore headlines older than this when first seen
+  max_news_age_minutes: 30            # a headline older than this when first seen is context, not a trigger
   max_chase_pct: 0.05                 # skip entry if price already ran > 5% above the signal-time price
   market_hours_only: true             # trade only during the regular session; signals wait for the open
   poll_interval_seconds: 60
-  state_file: newsbot_state.json      # positions, pending signals, seen headlines, trade log
+  state_file: newsbot_state.json      # positions, pending signals, evidence, decisions, trade log
