@@ -3,7 +3,7 @@ so the default interval is one call per hour covering the whole universe."""
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from ..models import KIND_SENTIMENT, NewsItem, to_utc
 from ._base import APISource, _f
@@ -15,9 +15,16 @@ class AlphaVantageNews(APISource):
     BASE = 'https://www.alphavantage.co/query'
     DEFAULT_INTERVAL = 3600.0
     MIN_RELEVANCE = 0.3
+    #: used when no tickers are configured (market mode)
+    DEFAULT_TOPICS = 'earnings,mergers_and_acquisitions,financial_markets'
+
+    def __init__(self, tickers=None, *, topics: Optional[str] = None, **kw):
+        super().__init__(tickers, **kw)
+        self.topics = topics
 
     def _fetch(self, since: datetime) -> List[NewsItem]:
-        data = self._get(self.BASE, function='NEWS_SENTIMENT', tickers=','.join(self.tickers) or None,
+        topics = self.topics or (None if self.tickers else self.DEFAULT_TOPICS)
+        data = self._get(self.BASE, function='NEWS_SENTIMENT', tickers=','.join(self.tickers) or None, topics=topics,
                          time_from=since.strftime('%Y%m%dT%H%M'), sort='LATEST', limit=200, apikey=self.api_key) or {}
         return self.parse(data, set(self.tickers), self.MIN_RELEVANCE)
 

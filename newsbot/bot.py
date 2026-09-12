@@ -21,7 +21,7 @@ import math
 from datetime import datetime, timedelta
 from typing import Callable, Dict, Iterable, List, Optional
 
-from .actions import Action, TradeAction
+from .actions import Action, TradeAction, build_report
 from .aggregator import EvidenceStore
 from .brokers import Broker, BrokerError
 from .clock import Clock, SystemClock
@@ -56,7 +56,9 @@ class NewsTradingBot:
                  store: Optional[EvidenceStore] = None,
                  scorer: Optional[Scorer] = None,
                  actions: Optional[List[Action]] = None,
-                 max_event_age: timedelta = timedelta(hours=12)):
+                 max_event_age: timedelta = timedelta(hours=12),
+                 prefilter_min_score: float = 0.2,
+                 max_scoring_passes: int = 25):
         """
         max_positions: concurrent open longs.
         position_size_pct: notional per position as a fraction of equity.
@@ -68,6 +70,9 @@ class NewsTradingBot:
         actions: what a signal does. Default [TradeAction()]. Without a TradeAction the bot only notifies.
         max_event_age: freshness limit for non-headline triggers (reported earnings, regulatory events),
             which providers often publish with the event's date rather than the moment we learn of it.
+        prefilter_min_score: with an expensive (AI) scorer, only bundles whose cheap rule features reach
+            this score (or that carry reported earnings / regulatory evidence) are sent to the model.
+        max_scoring_passes: cap on scoring passes per tick (strongest rule features first) in market mode.
         """
         self.source = CompositeNewsSource(sources)
         self.engine = engine
@@ -90,6 +95,9 @@ class NewsTradingBot:
         self.actions = list(actions) if actions is not None else [TradeAction()]
         self.execute_trades = any(a.executes_trades for a in self.actions)
         self.max_event_age = max_event_age
+        self.prefilter_min_score = prefilter_min_score
+        self.max_scoring_passes = max_scoring_passes
+        self.universe = engine.universe
         if self.state.evidence:
             self.store.load_dict(self.state.evidence)
 
@@ -98,8 +106,8 @@ class NewsTradingBot:
         if self._on_event:
             self._on_event(kind, payload)
 
-    def _market_open(self, now: datetime) -> bool:
-        return (not self.market_hours_only) or self.broker.is_market_open(now)
+    def _market_open(self, now: datetime, ticker: Optional[str] = None) -> bool:
+        return (not self.market_hours_only) or self.broker.is_market_open(now, ticker)
 
     def _dispatch(self, event: str, *args) -> None:
         for a in self.actions:
@@ -135,6 +143,7 @@ class NewsTradingBot:
         self.store.prune(now)
 
         signals: List[Signal] = []
+        candidates = []
         for ticker, trigger in dirty.items():
             if ticker in self.state.positions:
                 log.info('%s: new evidence ignored for scoring, already holding', ticker)
@@ -144,6 +153,19 @@ class NewsTradingBot:
             bundle = self.store.bundle(ticker, now, trigger)
             if bundle is None:
                 continue
+            f = bundle.features
+            strong_evidence = bool(f.get('earnings')) or f.get('regulatory_prior') is not None
+            if getattr(self.scorer, 'expensive', False) and not strong_evidence \
+                    and f.get('rule_max', 0.0) < self.prefilter_min_score:
+                log.debug('%s: prefiltered (rule_max %.2f < %.2f): %s', ticker, f.get('rule_max', 0.0),
+                          self.prefilter_min_score, trigger.headline)
+                continue
+            candidates.append((f.get('rule_max', 0.0) + (0.5 if strong_evidence else 0.0), ticker, trigger, bundle))
+        candidates.sort(key=lambda c: -c[0])
+        if len(candidates) > self.max_scoring_passes:
+            log.info('%d tickers with fresh triggers; scoring the top %d', len(candidates), self.max_scoring_passes)
+            candidates = candidates[:self.max_scoring_passes]
+        for _, ticker, trigger, bundle in candidates:
             c = self.scorer.score(bundle)
             self.state.last_scored[ticker] = now.isoformat()
             sig = self.engine.build(ticker, c, trigger, now)
@@ -158,13 +180,32 @@ class NewsTradingBot:
             sig.reference_price = self.feed.price(ticker)
             log.info('SIGNAL %s score=%.2f %s tp=+%.1f%% sl=-%.1f%% :: %s',
                      sig.ticker, sig.score, sig.category, sig.target_pct * 100, sig.stop_pct * 100, sig.headline)
-            self._dispatch('signal', sig, c, bundle.describe(10))
-            self._emit('signal', signal=sig, classification=c, bundle=bundle)
+            report = self.report_for(sig, c, bundle, now)
+            self._dispatch('signal', report)
+            self._emit('signal', signal=sig, classification=c, bundle=bundle, report=report)
             if self.execute_trades:
                 self.state.pending[sig.id] = sig
             signals.append(sig)
         self.state.evidence = self.store.to_dict()
         return signals
+
+    def report_for(self, sig: Signal, c, bundle, now: datetime):
+        """Assemble the human-readable / JSON signal report handed to every action."""
+        px = sig.reference_price
+        qty = None
+        equity = None
+        try:
+            equity = self.broker.equity()
+            if px:
+                qty = self.size_for(sig, px)
+        except Exception as e:  # noqa: BLE001 — a broker hiccup must not block the alert
+            log.warning('sizing for report failed: %s', e)
+        market = self.universe.market_for(sig.ticker)
+        return build_report(sig, c, now=now, reference_price=px, max_chase_pct=self.max_chase_pct, equity=equity,
+                            qty=qty, sources=bundle.sources, n_items=len(bundle.items),
+                            evidence_lines=bundle.describe(8).splitlines(), url=bundle.trigger.url,
+                            market=market.name if market else '', market_tz=market.tz if market else 'UTC',
+                            mode='trade' if self.execute_trades else 'notify-only')
 
     def poll_news(self, now: Optional[datetime] = None) -> List[Signal]:
         """Fetch as far back as the evidence window: context (sentiment, reported numbers, social) is useful
@@ -206,7 +247,7 @@ class NewsTradingBot:
                 # A bracket leg (take-profit or stop) filled on the broker's side.
                 self._close(pos, ExitReason.BROKER, now, exit_price_hint=px)
                 continue
-            if not self._market_open(now):
+            if not self._market_open(now, pos.ticker):
                 continue
             if px is None:
                 log.warning('no price for %s; cannot evaluate exits', pos.ticker)
@@ -249,8 +290,8 @@ class NewsTradingBot:
                 continue
             if len(self.state.positions) >= self.max_positions:
                 break
-            if not self._market_open(now):
-                break
+            if not self._market_open(now, sig.ticker):
+                continue                      # another market may be open
             px = self.feed.price(sig.ticker) or sig.reference_price
             if not px:
                 log.warning('no price for %s; signal stays queued', sig.ticker)
@@ -297,9 +338,10 @@ class NewsTradingBot:
 
     def run(self, max_ticks: Optional[int] = None) -> None:
         ticks = 0
-        log.info('news bot started: %d source(s), scorer=%s, actions=%s, mode=%s, max %d positions, %s',
-                 len(self.source.sources), type(self.scorer).__name__, [a.name for a in self.actions],
-                 'trade' if self.execute_trades else 'notify-only', self.max_positions, type(self.broker).__name__)
+        log.info('news bot started: universe=%s, %d source(s), scorer=%s, actions=%s, mode=%s, max %d positions, %s',
+                 self.universe.describe(), len(self.source.sources), type(self.scorer).__name__,
+                 [a.name for a in self.actions], 'trade' if self.execute_trades else 'notify-only',
+                 self.max_positions, type(self.broker).__name__)
         try:
             while max_ticks is None or ticks < max_ticks:
                 try:
@@ -321,6 +363,7 @@ class NewsTradingBot:
         wins = [t for t in closed if t.pnl > 0]
         return {
             'mode': 'trade' if self.execute_trades else 'notify-only',
+            'universe': self.universe.describe(),
             'scorer': type(self.scorer).__name__,
             'signals': sum(1 for d in self.state.decisions if d.get('signal')),
             'scored': len(self.state.decisions),

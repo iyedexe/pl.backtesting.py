@@ -18,10 +18,11 @@ from abc import ABC, abstractmethod
 from datetime import datetime
 from email.utils import parsedate_to_datetime
 from pathlib import Path
-from typing import Iterable, List, Mapping, Optional, Sequence, Set, Tuple
+from typing import Callable, Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple, Union
 
 from .http import RateLimiter, get_text
 from .models import KIND_NEWS, NewsItem, to_utc
+from .universe import EXCHANGE_SUFFIX
 
 log = logging.getLogger(__name__)
 
@@ -36,9 +37,18 @@ class NewsSource(ABC):
 
 # ---------------------------------------------------------------- tickers
 
-_EXCHANGE_RX = re.compile(r'\((?:NASDAQ|NYSE|NYSE American|NYSE ?MKT|AMEX|TSX|TSXV|OTCQB|OTCQX|OTC)\s*:\s*'
-                          r'([A-Z]{1,5}(?:[.-][A-Z])?)\)', re.IGNORECASE)
-_CASHTAG_RX = re.compile(r'(?<![\w$])\$([A-Z]{1,5})\b')
+_EXCHANGE_RX = re.compile(r'\(\s*(' + '|'.join(re.escape(k) for k in sorted(EXCHANGE_SUFFIX, key=len, reverse=True))
+                          + r')\s*:\s*([A-Z0-9]{1,6}(?:[.-][A-Z0-9]{1,2})?\.?)\s*\)', re.IGNORECASE)
+_CASHTAG_RX = re.compile(r'(?<![\w$])\$([A-Z]{1,5}(?:\.[A-Z]{1,2})?)\b')
+
+
+def exchange_tag_ticker(exchange: str, symbol: str) -> str:
+    """"(Euronext Paris: AIR)" -> "AIR.PA"; "(NASDAQ: AAPL)" -> "AAPL"; "(LSE: BP.)" -> "BP.L"."""
+    suffix = EXCHANGE_SUFFIX.get(exchange.upper().strip(), '')
+    sym = symbol.upper().rstrip('.')
+    if suffix and not sym.endswith(suffix):
+        sym = sym.replace('.', '-') + suffix     # BRK.B on a foreign exchange is rare; keep US dots for US
+    return sym if suffix else symbol.upper()
 
 
 class TickerExtractor:
@@ -56,9 +66,8 @@ class TickerExtractor:
                 self._aliases.append((re.compile(r'\b' + re.escape(name) + r'\b', re.IGNORECASE), ticker.upper()))
 
     def extract(self, text: str) -> List[str]:
-        found: List[str] = []
-        for rx in (_EXCHANGE_RX, _CASHTAG_RX):
-            found += [m.upper() for m in rx.findall(text)]
+        found: List[str] = [exchange_tag_ticker(ex, sym) for ex, sym in _EXCHANGE_RX.findall(text)]
+        found += [m.upper() for m in _CASHTAG_RX.findall(text)]
         if self._known_rx:
             found += self._known_rx.findall(text)
         for rx, ticker in self._aliases:
@@ -187,20 +196,35 @@ class RSSNewsSource(NewsSource):
         return out
 
 
+TickerProvider = Union[Iterable[str], Callable[[], Iterable[str]]]
+
+
 class PerTickerRSS(NewsSource):
-    """One RSS feed per ticker built from a URL template."""
+    """One RSS feed per ticker built from a URL template. `tickers` may be a callable (e.g. the bot's
+    currently active tickers in market mode); feeds are created lazily and capped at `max_tickers`."""
     name = 'per-ticker-rss'
     URL = ''
     KIND = KIND_NEWS
     STRIP_SUFFIX = False
 
-    def __init__(self, tickers: Iterable[str], timeout: float = 10.0, min_interval: float = 0.0,
-                 url: Optional[str] = None):
-        template = url or self.URL
-        self.feeds = [RSSNewsSource(template.format(ticker=t, ticker_lower=t.lower()), name=f'{self.name}:{t}',
-                                    tickers=[t], timeout=timeout, kind=self.KIND, min_interval=min_interval,
-                                    strip_suffix=self.STRIP_SUFFIX)
-                      for t in tickers]
+    def __init__(self, tickers: TickerProvider, timeout: float = 10.0, min_interval: float = 0.0,
+                 url: Optional[str] = None, max_tickers: int = 50):
+        self._template = url or self.URL
+        self._provider = tickers if callable(tickers) else (lambda: list(tickers))  # type: ignore[misc]
+        self._timeout, self._min_interval, self.max_tickers = timeout, min_interval, max_tickers
+        self._feeds: Dict[str, RSSNewsSource] = {}
+
+    def _feed(self, t: str) -> RSSNewsSource:
+        if t not in self._feeds:
+            self._feeds[t] = RSSNewsSource(self._template.format(ticker=t, ticker_lower=t.lower()),
+                                           name=f'{self.name}:{t}', tickers=[t], timeout=self._timeout,
+                                           kind=self.KIND, min_interval=self._min_interval,
+                                           strip_suffix=self.STRIP_SUFFIX)
+        return self._feeds[t]
+
+    @property
+    def feeds(self) -> List[RSSNewsSource]:
+        return [self._feed(t.upper()) for t in list(self._provider())[:self.max_tickers]]
 
     def fetch(self, since: Optional[datetime] = None) -> List[NewsItem]:
         out: List[NewsItem] = []
@@ -227,6 +251,48 @@ class NasdaqRSS(PerTickerRSS):
     name = 'nasdaq'
     URL = 'https://www.nasdaq.com/feed/rssoutbound?symbol={ticker}'
     KIND = 'filing'
+
+
+#: Market-wide press-release / regulatory-news feeds. Company tickers are extracted from
+#: "(EXCHANGE: SYMBOL)" tags in the text. URLs change occasionally; override with `url:` if one 404s.
+WIRE_FEEDS: Dict[str, Dict[str, str]] = {
+    'globenewswire_earnings': {
+        'url': 'https://www.globenewswire.com/RssFeed/subjectcode/12-Earnings%20Releases%20And%20Operating%20Results/'
+               'feedTitle/GlobeNewswire%20-%20Earnings%20Releases%20And%20Operating%20Results',
+        'kind': 'filing', 'markets': 'us'},
+    'globenewswire_public': {
+        'url': 'https://www.globenewswire.com/RssFeed/orgclass/1/feedTitle/GlobeNewswire%20-%20News%20about%20Public'
+               '%20Companies', 'kind': 'filing', 'markets': 'us'},
+    'globenewswire_europe': {
+        'url': 'https://www.globenewswire.com/RssFeed/region/Europe/feedTitle/GlobeNewswire%20-%20News%20from%20Europe',
+        'kind': 'filing', 'markets': 'eu,uk'},
+    'prnewswire_earnings': {
+        'url': 'https://www.prnewswire.com/rss/financial-services-latest-news/earnings-list.rss',
+        'kind': 'filing', 'markets': 'us'},
+    'prnewswire_all': {'url': 'https://www.prnewswire.com/rss/news-releases-list.rss', 'kind': 'filing',
+                       'markets': 'us'},
+    'businesswire_earnings': {
+        'url': 'https://feed.businesswire.com/rss/home/?rss=G1QFDERJXkJeEFpRXA%3D%3D', 'kind': 'filing',
+        'markets': 'us'},
+    'accesswire': {'url': 'https://www.accesswire.com/rss/latest', 'kind': 'filing', 'markets': 'us'},
+    'eqs_adhoc': {'url': 'https://www.eqs-news.com/rss/news?news_type=adhoc', 'kind': 'filing', 'markets': 'eu'},
+    'lse_rns': {'url': 'https://www.investegate.co.uk/rss/announcements.rss', 'kind': 'filing', 'markets': 'uk'},
+    'sec_8k': {'url': 'https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type=8-K&count=100&output=atom',
+               'kind': 'filing', 'markets': 'us'},
+}
+
+
+class WireFeed(RSSNewsSource):
+    """A named entry of `WIRE_FEEDS`."""
+
+    def __init__(self, feed: str, extractor: TickerExtractor, *, url: Optional[str] = None, **kw):
+        if feed not in WIRE_FEEDS:
+            raise ValueError(f'unknown wire feed {feed!r}; choose from {sorted(WIRE_FEEDS)}')
+        spec = WIRE_FEEDS[feed]
+        kw.setdefault('min_interval', 120.0)
+        kw.setdefault('kind', spec['kind'])
+        super().__init__(url or spec['url'], name=f'wire:{feed}', extractor=extractor, **kw)
+        self.markets = spec['markets'].split(',')
 
 
 class CompositeNewsSource(NewsSource):

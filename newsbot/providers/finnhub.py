@@ -2,13 +2,15 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from ..models import KIND_NEWS, NewsItem, to_utc
 from ._base import APISource, earnings_result_item, earnings_upcoming_item
 
 
 class FinnhubNews(APISource):
+    """Per-ticker company news, or (no tickers = market mode) the general market feed whose
+    `related` field carries the symbols each story is about."""
     name = 'finnhub'
     ENV_KEYS = ('FINNHUB_API_KEY',)
     BASE = 'https://finnhub.io/api/v1'
@@ -16,6 +18,9 @@ class FinnhubNews(APISource):
 
     def _fetch(self, since: datetime) -> List[NewsItem]:
         out: List[NewsItem] = []
+        if not self.tickers:
+            data = self._get(f'{self.BASE}/news', category='general', token=self.api_key)
+            return self.parse(data or [], None)
         frm, to = since.date().isoformat(), datetime.now(timezone.utc).date().isoformat()
         for t in self.tickers:
             data = self._get(f'{self.BASE}/company-news', symbol=t, **{'from': frm}, to=to, token=self.api_key)
@@ -23,13 +28,17 @@ class FinnhubNews(APISource):
         return out
 
     @staticmethod
-    def parse(rows: List[Dict[str, Any]], ticker: str) -> List[NewsItem]:
+    def parse(rows: List[Dict[str, Any]], ticker: Optional[str]) -> List[NewsItem]:
         items = []
         for r in rows:
             if not r.get('headline') or r.get('datetime') is None:
                 continue
+            related = [t.strip().upper() for t in (r.get('related') or '').split(',') if t.strip()]
+            tickers = [ticker] if ticker else related
+            if not tickers:
+                continue
             items.append(NewsItem(id=f'finnhub:{r.get("id") or r["url"]}', headline=r['headline'],
-                                  published=to_utc(int(r['datetime'])), tickers=[ticker],
+                                  published=to_utc(int(r['datetime'])), tickers=tickers,
                                   summary=r.get('summary') or '', source=f'finnhub/{r.get("source", "")}',
                                   url=r.get('url') or '', kind=KIND_NEWS,
                                   meta={'category': r.get('category')}))

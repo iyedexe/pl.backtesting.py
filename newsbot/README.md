@@ -1,10 +1,12 @@
 # newsbot — news-driven long-only equity bot (max one-week hold)
 
-`newsbot` gathers evidence about each ticker from many sources (news APIs, press-release feeds,
-provider sentiment, reported earnings vs consensus, FDA and clinical-trial events, social chatter),
-aggregates it per ticker, scores the whole bundle with an AI model (or a deterministic rule ensemble),
-and turns qualifying scores into **long** signals. A signal can place the order itself, send a
-Telegram message, hit a webhook, or any combination. Every position carries three exits from the
+`newsbot` listens to a whole market (US, Europe, UK, or several) or an explicit ticker list. It
+gathers evidence about each ticker from many sources (news APIs, press-release wires, provider
+sentiment, reported earnings vs consensus, FDA and clinical-trial events, social chatter), aggregates
+it per ticker, scores the whole bundle with an AI model (or a deterministic rule ensemble), and turns
+qualifying scores into **long** signal reports: estimated entry and entry limit, target, stop, exit
+deadline, suggested size, risk/reward, the model's reasons and the evidence. A report can go to
+Slack, Discord, Telegram, any webhook, and/or straight to the bot's own order execution. Every position carries three exits from the
 moment it is filled:
 
 | exit   | rule                                                            |
@@ -52,10 +54,34 @@ python -m newsbot score --config config.yaml --news news.json --ticker AAPL --as
 purely to exercise the pipeline. Its backtest result says nothing about the strategy's edge. Supply
 your own history (same JSON/CSV schema: `published`, `tickers`, `headline`, `summary`) for a real test.
 
+## Universe: markets, not tickers
+
+```yaml
+universe: {markets: [us]}            # or [eu, uk], [us, eu], [all]; optional exclude: [XYZ]
+universe: [AAPL, MSFT]               # explicit list still works
+```
+
+In market mode nothing is pinned. Tickers come from the evidence itself: provider ticker tags
+(Alpaca, Polygon, Finnhub `related`, Alpha Vantage, Marketaux, FMP), press-release exchange tags
+such as `(NASDAQ: AAPL)`, `(Euronext Paris: AIR)`, `(XETRA: BMW)`, `(LSE: BP)`, `(SIX: NESN)`,
+`$CASHTAGs`, and company `aliases`. Tickers carry Yahoo-style suffixes (`AIR.PA`, `BMW.DE`, `BP.L`)
+and the universe keeps only those whose suffix belongs to a configured market. Each market has its
+own regular session (New York, Paris, London, Toronto) used by `market_hours_only` per ticker, and
+the `yfinance` price feed resolves suffixed tickers directly.
+
+Every source has a market-wide mode (see `config.example.yaml`); per-ticker RSS feeds follow the
+tickers currently carrying evidence. `type: wire` adds named press-release feeds (GlobeNewswire,
+PR Newswire, Business Wire, Accesswire, SEC 8-K, EQS ad-hoc for Germany, RNS for London).
+
+To keep AI spend bounded in market mode, bundles are only sent to the model when their cheap rule
+features reach `scoring.prefilter_min_score` (reported earnings and regulatory events always pass),
+and at most `scoring.max_passes_per_tick` tickers are scored per tick, strongest first.
+
 ## Architecture
 
 ```
-sources.py      NewsSource      -> File | RSS | YahooFinanceRSS | GoogleNewsRSS | NasdaqRSS
+universe.py     Universe        markets (suffixes, sessions, countries) or explicit tickers
+sources.py      NewsSource      -> File | RSS | WireFeed | YahooFinanceRSS | GoogleNewsRSS | NasdaqRSS
 providers/      APISource       -> Finnhub (news, earnings calendar) | AlphaVantage sentiment | Polygon |
                                    Marketaux | NewsAPI | FMP (news, calendar) | Nasdaq calendar |
                                    FDA press RSS | openFDA approvals | ClinicalTrials.gov | StockTwits | Reddit
@@ -64,7 +90,8 @@ aggregator.py   EvidenceStore   per-ticker window of NewsItems -> Bundle (items 
 scoring.py      Scorer          -> RuleScorer (ensemble) | ClaudeScorer (AI reads the whole bundle)
 classifiers/    Classifier      per-headline regex scoring (bundle features + backtests)
 signals.py      SignalEngine    score -> Signal(ticker, target_pct, stop_pct, max_hold_days, ttl)
-actions.py      Action          -> TradeAction | TelegramAction | WebhookAction | LogAction
+actions.py      Action          -> TradeAction | SlackAction | DiscordAction | TelegramAction | WebhookAction
+                SignalReport    entry / limit / target / stop / exit-by / size / risk / reasons / evidence
 prices.py       PriceFeed       -> StaticPriceFeed | CSVPriceFeed | YFinancePriceFeed | AlpacaPriceFeed
 brokers.py      Broker          -> PaperBroker | AlpacaBroker (bracket orders, paper endpoint by default)
 bot.py          NewsTradingBot  tick(): poll -> store -> score dirty tickers -> actions -> exits -> entries
@@ -100,11 +127,34 @@ prior, social tilt, source count) and a chronological text rendering.
 Every scoring pass is logged in the state file (`decisions`) whether or not it produced a signal, so
 you can audit what the model saw and decided: `python -m newsbot status`.
 
-### Actions
+### Actions and the signal report
 
 `actions:` in the config lists what a signal does. `trade` queues it for execution by the bot;
-`telegram` and `webhook` notify (signal, entry and exit events are each optional). Without a
-`trade` action the bot runs **notify-only**: it scores and alerts but never places an order.
+`slack`, `discord`, `telegram` and `webhook` notify (signal, entry and exit events are each
+optional). Without a `trade` action the bot runs **notify-only**: it scores and alerts but never
+places an order. Every messenger receives the same report:
+
+```
+📈 LONG AIR.PA  score +0.78  [guidance_raise]  confidence 80%  (EU)
+Trigger: Airbus raises full-year delivery guidance after record quarter
+https://...
+
+Entry:  ~150.20 now, limit 157.71 (do not chase above)
+Target: 157.71 (+5.0%)
+Stop:   145.69 (-3.0%)   R:R 1.67
+Exit by: Mon 11 Mar 09:36 CET (max 7 days) or on target/stop
+Signal valid until: Tue 05 Mar 03:36 CET
+Size:   133 shares ≈ 19,976.60 (risk ≈ 599.30 at stop)
+
+Why:
+  • beat and raise across revenue and EPS
+  • provider sentiment +0.62 over 3 articles
+Evidence: 5 item(s) from wire, alpaca, alphavantage, stocktwits
+  *[filing]   0.1h ago | wire:globenewswire_europe: Airbus raises ...
+Mode: notify-only
+```
+
+The webhook action posts the same content as JSON (`SignalReport.to_dict()`).
 
 ### Signal rules (`SignalEngine`)
 
@@ -178,11 +228,18 @@ poll frequency. Test it offline on a news file without touching the live loop:
 python -m newsbot score --config config.yaml --news news.json --ticker AAPL --as-of 2023-05-05T00:00:00Z
 ```
 
-## Telegram
+## Messaging setup
 
-Create a bot with @BotFather, get the token, send the bot a message, then read your chat id from
-`https://api.telegram.org/bot<TOKEN>/getUpdates`. Export `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`
-and add `- type: telegram` under `actions`. Remove `- type: trade` for alerts without orders.
+* **Slack**: create an incoming webhook (Slack app → Incoming Webhooks), export `SLACK_WEBHOOK_URL`,
+  add `- type: slack` under `actions`.
+* **Discord**: channel settings → Integrations → Webhooks, export `DISCORD_WEBHOOK_URL`, add
+  `- type: discord`.
+* **Telegram**: create a bot with @BotFather, send it a message, read your chat id from
+  `https://api.telegram.org/bot<TOKEN>/getUpdates`, export `TELEGRAM_BOT_TOKEN` and
+  `TELEGRAM_CHAT_ID`, add `- type: telegram`.
+* **Anything else**: `- type: webhook` with `url:` receives the JSON report.
+
+Leave `- type: trade` out of `actions` for alerts without orders; add it to let the bot execute too.
 
 ## Tests
 

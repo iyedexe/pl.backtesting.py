@@ -3,14 +3,19 @@
 # Check what every source returns first:  python -m newsbot sources --config config.yaml
 # Every key is optional; defaults are in newsbot/config.py (DEFAULT_CONFIG).
 
-# Tickers you are willing to trade. Empty list = any ticker the news names (RSS feeds then rely
-# on "(NASDAQ: XYZ)" / "$XYZ" patterns in the text to attribute headlines).
-universe: [AAPL, MSFT, NVDA, AMZN, GOOG, META, TSLA, AMD, PFE, MRNA]
+# --- Universe -------------------------------------------------------------------------------
+# Whole markets: the bot listens to everything and discovers tickers from the news itself
+# (provider ticker tags, "(NASDAQ: XYZ)" / "(Euronext Paris: AIR)" / "(LSE: BP)" press-release tags,
+# $CASHTAGs). Markets: us, eu, uk, ca, all. Tickers use Yahoo-style suffixes (AIR.PA, BMW.DE, BP.L).
+universe:
+  markets: [us]                       # e.g. [eu, uk] for Europe, [us, eu] for both
+  exclude: []                         # tickers never to trade
+# Or an explicit list instead:
+# universe: [AAPL, MSFT, NVDA, AMZN, GOOG, META, TSLA, AMD, PFE, MRNA]
 
-# Company names per ticker. Needed for sources that never print tickers (FDA, general news,
-# ClinicalTrials.gov sponsors). Used by every text-extracting source.
+# Company names per ticker (optional). Adds ticker attribution for sources that never print tickers
+# (FDA, general news, ClinicalTrials.gov sponsors).
 aliases:
-  AAPL: [Apple, "Apple Inc"]
   PFE: [Pfizer]
   MRNA: [Moderna]
 
@@ -24,41 +29,58 @@ api_keys: {}
 #   news / filing / regulatory / earnings_result  -> TRIGGERS: a fresh one re-scores the ticker
 #   sentiment / social / earnings_upcoming        -> CONTEXT: folded into the next scoring pass
 # `min_interval_seconds` overrides the built-in free-tier pacing of a source.
+# In market mode every source runs market-wide: Alpaca/Polygon/FMP return all news, Finnhub uses
+# its general feed (ticker-tagged via `related`), Alpha Vantage uses `topics`, Marketaux filters by
+# the universe's countries, StockTwits samples trending symbols, Reddit groups new posts by $CASHTAG.
+# Per-ticker feeds (yahoo, google, nasdaq_rss) automatically follow the tickers currently carrying
+# evidence. Add `tickers: [...]` to any source to pin it.
 sources:
+  # Press-release wires: the primary source for earnings and corporate actions, no key needed.
+  # Names: globenewswire_earnings, globenewswire_public, globenewswire_europe, prnewswire_earnings,
+  # prnewswire_all, businesswire_earnings, accesswire, eqs_adhoc (DE ad-hoc), lse_rns (UK), sec_8k.
+  # Feed URLs move occasionally: check with `python -m newsbot sources` and override with `url:`.
+  - type: wire
+    feed: globenewswire_earnings
+  - type: wire
+    feed: prnewswire_earnings
+  - type: wire
+    feed: sec_8k
+  # - {type: wire, feed: globenewswire_europe}   # for markets: [eu, uk]
+  # - {type: wire, feed: eqs_adhoc}
+  # - {type: wire, feed: lse_rns}
   # Real-time, ticker-tagged, free with a paper account. Also the backfill source for backtests.
   - type: alpaca
-  # Company news (60 calls/min free) and the earnings calendar with reported EPS vs consensus.
+  # Market news (60 calls/min free) and the earnings calendar with reported EPS vs consensus.
   - type: finnhub
   - type: finnhub_earnings
-  # Provider sentiment per ticker. Free tier ~25 requests/day -> one sweep per hour by default.
+  # Provider sentiment. Free tier ~25 requests/day -> one sweep per hour by default.
   - type: alphavantage
     min_interval_seconds: 3600
-  # Benzinga-sourced, delayed on the free tier (5 calls/min). One call per poll for the universe.
+    # topics: earnings,mergers_and_acquisitions   # market-mode default
+  # Benzinga-sourced, delayed on the free tier (5 calls/min). One call per poll.
   - type: polygon
-  # Small free tiers; each is one call per interval over the whole universe.
+  # Small free tiers; one call per interval.
   - type: marketaux
+    # countries: [fr, de, gb]            # defaults to the universe's markets
   - type: newsapi
-    # queries: {AAPL: '"Apple Inc"'}     # optional search phrases per ticker
   - type: fmp
   - type: fmp_earnings
-  # No-key RSS feeds per ticker (minutes of latency).
+  # Per-ticker RSS (no key); in market mode they follow the active tickers (max 50).
   - type: yahoo
   - type: google
-  - type: nasdaq_rss                      # Nasdaq.com press releases per ticker (kind: filing)
+  - type: nasdaq_rss
   # Upcoming report dates (context) from Nasdaq's public calendar.
   - type: nasdaq_earnings
-  # Biotech catalysts. Tickers come from `aliases`.
+  # Biotech catalysts. Tickers come from exchange tags / `aliases`.
   - type: fda                             # FDA press announcements RSS
-  - type: openfda                         # Drugs@FDA approvals
-  - type: clinicaltrials                  # status changes for sponsors in `aliases` (or `sponsors: {PFE: [Pfizer]}`)
+  - type: openfda                         # Drugs@FDA approvals (needs `aliases`)
+  # - type: clinicaltrials                # status changes for sponsors in `aliases` or `sponsors: {PFE: [Pfizer]}`
   # Social (context only, weak weight).
-  - type: stocktwits
+  - type: stocktwits                      # trending symbols in market mode
   - type: reddit
     subreddits: [wallstreetbets, stocks]
-  # Any other RSS/Atom feed, e.g. press-release wires:
-  # - type: rss
-  #   url: https://www.globenewswire.com/RssFeed/subjectcode/12-Earnings%20Releases%20And%20Operating%20Results/feedTitle/GlobeNewswire%20-%20Earnings%20Releases%20And%20Operating%20Results
-  #   name: globenewswire-earnings
+  # - type: rss                           # any other RSS/Atom feed
+  #   url: https://example.com/feed.xml
   #   kind: filing
   # - type: file                          # JSON/CSV file (replay / testing)
   #   path: newsbot/data/sample_news.json
@@ -76,6 +98,9 @@ scoring:
   effort: medium                      # low | medium | high
   window_hours: 24                    # evidence look-back per ticker
   max_event_age_hours: 12             # freshness limit for reported earnings / regulatory triggers
+  prefilter_min_score: 0.2            # AI scorer only sees bundles whose rule features reach this
+                                      # (reported earnings / regulatory evidence always pass)
+  max_passes_per_tick: 25             # cap on AI scoring passes per tick (strongest first)
 
 signals:
   min_score: 0.5                      # bundle score needed to go long (0..1)
@@ -88,15 +113,18 @@ signals:
   blocked_categories: []              # optional deny-list, e.g. [partnership]
 
 # --- Actions: what a signal does. Any combination. ------------------------------------------
-# No `trade` entry = notify-only mode (score + alert, never place orders).
+# No `trade` entry = notify-only mode: score, send the report (entry / target / stop / exit date /
+# size / reasons / evidence), never place orders. Add `trade` to let the bot execute as well.
 actions:
-  - type: trade                       # queue the signal; the bot places the order (paper or Alpaca)
-  - type: telegram                    # TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID from env, or token:/chat_id: here
-    events: [signal, entry, exit]     # which events to send
-    include_evidence: true            # append the last evidence lines to signal messages
-  # - type: webhook
+  - type: slack                       # SLACK_WEBHOOK_URL from env, or webhook_url: here
+    events: [signal]                  # signal | entry | exit
+    include_evidence: true
+  # - type: discord                   # DISCORD_WEBHOOK_URL
+  # - type: telegram                  # TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID
+  #   events: [signal, entry, exit]
+  # - type: webhook                   # full JSON report to any URL
   #   url: https://example.com/hook
-  #   events: [signal]
+  # - type: trade                     # queue the signal; the bot places the order (paper or Alpaca)
 
 prices:
   type: yfinance                      # yfinance | alpaca | static | csv
@@ -117,6 +145,6 @@ bot:
   fractional_shares: false
   max_news_age_minutes: 30            # a headline older than this when first seen is context, not a trigger
   max_chase_pct: 0.05                 # skip entry if price already ran > 5% above the signal-time price
-  market_hours_only: true             # trade only during the regular session; signals wait for the open
+  market_hours_only: true             # trade only during each ticker's market session; signals wait for the open
   poll_interval_seconds: 60
   state_file: newsbot_state.json      # positions, pending signals, evidence, decisions, trade log

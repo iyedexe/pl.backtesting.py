@@ -7,10 +7,11 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta
-from typing import Iterable, List, Optional, Set
+from typing import Iterable, List, Optional, Set, Union
 
 from .classifiers import Classifier, RuleClassifier
 from .models import Classification, NewsItem, Signal
+from .universe import Universe, universe_arg
 
 log = logging.getLogger(__name__)
 
@@ -23,7 +24,7 @@ class SignalEngine:
                  max_hold_days: float = 7,
                  signal_ttl: timedelta = timedelta(hours=18),
                  scale_target_by_score: bool = True,
-                 universe: Optional[Iterable[str]] = None,
+                 universe: Union[Universe, Iterable[str], None] = None,
                  categories: Optional[Iterable[str]] = None,
                  blocked_categories: Optional[Iterable[str]] = None):
         """
@@ -34,7 +35,7 @@ class SignalEngine:
             earnings release be bought at the next open).
         scale_target_by_score: if True, stronger catalysts get a wider target
             (x1.0 at score 0.5, x1.25 at score 1.0).
-        universe: optional whitelist of tickers; empty/None = trade any ticker the news names.
+        universe: ticker list or `Universe` (markets); empty/None = trade any ticker the news names.
         categories / blocked_categories: optional catalyst allow/deny lists.
         """
         self.classifier = classifier or RuleClassifier()
@@ -44,7 +45,7 @@ class SignalEngine:
         self.max_hold_days = max_hold_days
         self.signal_ttl = signal_ttl
         self.scale_target_by_score = scale_target_by_score
-        self.universe: Set[str] = {t.upper() for t in universe} if universe else set()
+        self.universe: Universe = universe_arg(universe)
         self.categories: Set[str] = set(categories) if categories else set()
         self.blocked_categories: Set[str] = set(blocked_categories) if blocked_categories else set()
 

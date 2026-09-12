@@ -49,7 +49,8 @@ class SimClock(Clock):
 
 def is_regular_session(when: datetime) -> bool:
     """US equities regular session (Mon-Fri 09:30-16:00 New York). Exchange holidays are NOT handled;
-    use a broker-side clock (e.g. Alpaca `/v2/clock`) when that matters."""
+    use a broker-side clock (e.g. Alpaca `/v2/clock`) when that matters. For other markets see
+    `newsbot.universe.Universe.is_open`."""
     local = to_utc(when).astimezone(NY)
     return local.weekday() < 5 and REGULAR_OPEN <= local.time() < REGULAR_CLOSE
 

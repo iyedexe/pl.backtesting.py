@@ -20,6 +20,9 @@ log = logging.getLogger(__name__)
 
 
 class Scorer(ABC):
+    #: True for scorers that cost money/latency per call; the bot pre-filters bundles for them.
+    expensive = False
+
     @abstractmethod
     def score(self, bundle: Bundle) -> Classification:
         ...
@@ -107,6 +110,8 @@ OUTPUT_SCHEMA = {
 
 
 class ClaudeScorer(Scorer):
+    expensive = True
+
     def __init__(self, model: str = 'claude-opus-5', *, client=None, fallback: Optional[Scorer] = None,
                  effort: str = 'medium', max_items: int = 25):
         if client is None:

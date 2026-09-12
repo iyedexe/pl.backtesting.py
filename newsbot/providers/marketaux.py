@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Dict, List
+from typing import Any, Dict, Iterable, List, Optional
 
 from ..models import KIND_SENTIMENT, NewsItem, to_utc
 from ._base import APISource, _f
@@ -14,8 +14,13 @@ class MarketauxNews(APISource):
     BASE = 'https://api.marketaux.com/v1/news/all'
     DEFAULT_INTERVAL = 900.0
 
+    def __init__(self, tickers=None, *, countries: Optional[Iterable[str]] = None, **kw):
+        super().__init__(tickers, **kw)
+        self.countries = ','.join(countries) if countries else None   # market mode: e.g. "us" or "fr,de,gb"
+
     def _fetch(self, since: datetime) -> List[NewsItem]:
         data = self._get(self.BASE, symbols=','.join(self.tickers) or None, filter_entities='true',
+                         countries=None if self.tickers else self.countries, entity_types='equity',
                          published_after=since.strftime('%Y-%m-%dT%H:%M'), language='en', limit=50,
                          api_token=self.api_key) or {}
         return self.parse(data, set(self.tickers))

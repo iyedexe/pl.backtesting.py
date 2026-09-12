@@ -142,7 +142,7 @@ class AlpacaBroker(Broker):
             out[p['symbol']] = BrokerPosition(p['symbol'], float(p['qty']), float(p['avg_entry_price']))
         return out
 
-    def is_market_open(self, now: Optional[datetime] = None) -> bool:
+    def is_market_open(self, now: Optional[datetime] = None, ticker: Optional[str] = None) -> bool:
         try:
             return bool(self.client.get('/v2/clock')['is_open'])
         except BrokerError as e:

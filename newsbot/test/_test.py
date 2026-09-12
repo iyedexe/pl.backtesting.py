@@ -354,7 +354,7 @@ class TestReplayAndConfig(unittest.TestCase):
         bot = build_bot(cfg, clock=SimClock(T0))
         self.assertEqual(bot.max_positions, 3)
         self.assertEqual(bot.broker.cash(), 5000)
-        self.assertEqual(bot.engine.universe, {'ACME'})
+        self.assertEqual(bot.engine.universe.tickers, {'ACME'})
         with self.assertRaises(ValueError):
             build_bot(merge_config({'sources': [{'type': 'nope'}], 'prices': {'type': 'static'}}))
 

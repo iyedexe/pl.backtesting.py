@@ -12,9 +12,10 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Union
 
 from .classifiers import Classifier, RuleClassifier
+from .universe import Universe, universe_arg
 from .models import (KIND_EARNINGS_RESULT, KIND_EARNINGS_UPCOMING, KIND_REGULATORY, KIND_SENTIMENT, KIND_SOCIAL,
                      NewsItem, to_utc)
 
@@ -80,10 +81,10 @@ class Bundle:
 
 class EvidenceStore:
     def __init__(self, window: timedelta = timedelta(hours=24), classifier: Optional[Classifier] = None,
-                 universe: Optional[Iterable[str]] = None):
+                 universe: Union[Universe, Iterable[str], None] = None):
         self.window = window
         self.classifier = classifier or RuleClassifier()
-        self.universe = {t.upper() for t in universe} if universe else set()
+        self.universe: Universe = universe_arg(universe)
         self._items: Dict[str, Dict[str, NewsItem]] = defaultdict(dict)
 
     # -- storage ---------------------------------------------------------

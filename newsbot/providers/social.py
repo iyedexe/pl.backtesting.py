@@ -10,14 +10,27 @@ from ._base import APISource
 
 
 class StockTwitsStream(APISource):
+    """Per-ticker streams, or (market mode, no tickers) the trending-symbols list, each trending
+    symbol's stream then being sampled (capped at `max_trending`)."""
     name = 'stocktwits'
     ENV_KEYS = ()
     BASE = 'https://api.stocktwits.com/api/2/streams/symbol/{ticker}.json'
+    TRENDING = 'https://api.stocktwits.com/api/2/trending/symbols.json'
     DEFAULT_INTERVAL = 300.0
 
+    def __init__(self, tickers=None, *, max_trending: int = 15, **kw):
+        super().__init__(tickers, **kw)
+        self.max_trending = max_trending
+
     def _fetch(self, since: datetime) -> List[NewsItem]:
+        tickers = self.tickers
+        if not tickers:
+            data = self._get(self.TRENDING) or {}
+            tickers = [s.get('symbol', '').upper() for s in data.get('symbols', [])][:self.max_trending]
         out: List[NewsItem] = []
-        for t in self.tickers:
+        for t in tickers:
+            if not t:
+                continue
             data = self._get(self.BASE.format(ticker=t)) or {}
             item = self.parse(data, t, since)
             if item:
@@ -64,8 +77,25 @@ class RedditMentions(APISource):
     def _headers(self) -> Dict[str, str]:
         return {'User-Agent': 'python:newsbot:1.0 (news trading research)'}
 
+    NEW = 'https://www.reddit.com/r/{sub}/new.json'
+
     def _fetch(self, since: datetime) -> List[NewsItem]:
         out: List[NewsItem] = []
+        if not self.tickers:      # market mode: newest posts, grouped by the $CASHTAGs they mention
+            from ..sources import TickerExtractor  # noqa: PLC0415
+            ex = TickerExtractor()
+            by_ticker: Dict[str, List[Dict[str, Any]]] = {}
+            for sub in self.subreddits:
+                data = self._get(self.NEW.format(sub=sub), limit=100) or {}
+                for c in (data.get('data') or {}).get('children', []):
+                    post = c.get('data', {})
+                    for t in ex.extract(f"{post.get('title', '')} {post.get('selftext', '')[:500]}"):
+                        by_ticker.setdefault(t, []).append(post)
+            for t, grouped in by_ticker.items():
+                item = self.parse(grouped, t, since)
+                if item:
+                    out.append(item)
+            return out
         for t in self.tickers:
             posts: List[Dict[str, Any]] = []
             for sub in self.subreddits:

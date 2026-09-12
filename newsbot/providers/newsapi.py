@@ -22,9 +22,12 @@ class NewsAPINews(APISource):
         self.extractor = extractor or TickerExtractor(self.tickers)
         self.queries = dict(queries or {})       # ticker -> search phrase, e.g. {'AAPL': '"Apple Inc"'}
 
+    MARKET_QUERY = ('"beats estimates" OR "raises guidance" OR "FDA approval" OR "to be acquired" OR '
+                    '"record revenue" OR "quarterly results"')
+
     def _query(self) -> str:
-        terms = [self.queries.get(t, f'"{t}"') for t in self.tickers] or ['earnings']
-        return ' OR '.join(terms)[:490]          # NewsAPI caps q at 500 chars
+        terms = [self.queries.get(t, f'"{t}"') for t in self.tickers]
+        return (' OR '.join(terms) if terms else self.MARKET_QUERY)[:490]   # NewsAPI caps q at 500 chars
 
     def _fetch(self, since: datetime) -> List[NewsItem]:
         data = self._get(self.BASE, q=self._query(), **{'from': since.strftime('%Y-%m-%dT%H:%M:%S')},

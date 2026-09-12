@@ -12,7 +12,7 @@ import uuid
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Dict, Optional
+from typing import Callable, Dict, Optional
 
 from .clock import Clock, SystemClock, is_regular_session
 from .models import Fill
@@ -58,15 +58,19 @@ class Broker(ABC):
         ...
 
     @abstractmethod
-    def is_market_open(self, now: Optional[datetime] = None) -> bool:
+    def is_market_open(self, now: Optional[datetime] = None, ticker: Optional[str] = None) -> bool:
+        """Regular session check; `ticker` lets multi-market setups pick the right exchange."""
         ...
 
 
 class PaperBroker(Broker):
     def __init__(self, price_feed: PriceFeed, cash: float = 100_000.0, *, clock: Optional[Clock] = None,
-                 commission: float = 0.0, slippage_bps: float = 0.0, always_open: bool = False):
+                 commission: float = 0.0, slippage_bps: float = 0.0, always_open: bool = False,
+                 session: Optional[Callable[[datetime, Optional[str]], bool]] = None):
+        """session: (now, ticker) -> bool; defaults to the US regular session."""
         self.feed = price_feed
         self.clock = clock or SystemClock()
+        self.session = session
         self._cash = float(cash)
         self.commission = commission          # per-order fixed cost
         self.slippage = slippage_bps / 10_000
@@ -87,8 +91,11 @@ class PaperBroker(Broker):
     def positions(self) -> Dict[str, BrokerPosition]:
         return dict(self._positions)
 
-    def is_market_open(self, now: Optional[datetime] = None) -> bool:
-        return self.always_open or is_regular_session(now or self.clock.now())
+    def is_market_open(self, now: Optional[datetime] = None, ticker: Optional[str] = None) -> bool:
+        if self.always_open:
+            return True
+        now = now or self.clock.now()
+        return self.session(now, ticker) if self.session else is_regular_session(now)
 
     def _price(self, ticker: str, reference_price: Optional[float]) -> float:
         px = self.feed.price(ticker)

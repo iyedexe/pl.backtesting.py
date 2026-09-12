@@ -309,18 +309,28 @@ class TestMultiSourceBot(_Fixture, unittest.TestCase):
         sent, posted, cb = [], [], []
         tg = TelegramAction(sender=sent.append)
         wh = WebhookAction('http://example/hook', sender=posted.append)
-        bot = self.make(actions=[tg, wh, CallbackAction(on_signal=lambda s, c, e: cb.append(s.ticker))],
-                        items=[item('Acme beats estimates and raises guidance')])
+        bot = self.make(actions=[tg, wh, CallbackAction(on_signal=lambda r: cb.append(r))],
+                        items=[item('Acme beats estimates and raises guidance', url='http://news/1')])
         bot.tick()
         self.assertEqual(bot.summary()['mode'], 'notify-only')
         self.assertEqual(bot.state.positions, {})
         self.assertEqual(bot.state.pending, {})
-        self.assertEqual(cb, ['ACME'])
+        self.assertEqual([r.ticker for r in cb], ['ACME'])
+        report = cb[0]
+        self.assertEqual((report.reference_price, report.target_price, report.stop_price), (100.0, 105.0, 97.0))
+        self.assertAlmostEqual(report.entry_limit, 105.0)              # default max_chase 5%
+        self.assertEqual(report.exit_by, T0 + timedelta(days=7))
+        self.assertEqual(report.suggested_qty, 200)                    # 20% of 100k at $100
+        self.assertAlmostEqual(report.risk_amount, 600)                # 200 * 100 * 3%
+        self.assertEqual(report.risk_reward, 1.67)
         self.assertEqual(len(sent), 1)
-        self.assertIn('LONG signal ACME', sent[0])
-        self.assertIn('target 105.00, stop 97.00', sent[0])
-        self.assertIn('Evidence:', sent[0])
+        text = sent[0]
+        for needle in ('LONG ACME', 'Target: 105.00', 'Stop:   97.00', 'Exit by:', 'Size:   200 shares',
+                       'http://news/1', 'Why:', 'Evidence: 1 item(s)', 'Mode: notify-only'):
+            self.assertIn(needle, text)
         self.assertEqual(posted[0]['event'], 'signal')
+        self.assertEqual(posted[0]['ticker'], 'ACME')
+        self.assertEqual(posted[0]['target_price'], 105.0)
         self.assertEqual(posted[0]['signal']['ticker'], 'ACME')
 
     def test_trade_plus_telegram_entry_and_exit_messages(self):
@@ -338,7 +348,7 @@ class TestMultiSourceBot(_Fixture, unittest.TestCase):
 
     def test_failing_action_does_not_block_trading(self):
         class Bad(CallbackAction):
-            def on_signal(self, *a):
+            def on_signal(self, report):
                 raise RuntimeError('telegram down')
         bot = self.make(actions=[Bad(), TradeAction()], items=[item('Acme beats estimates and raises guidance')])
         bot.tick()
@@ -414,6 +424,186 @@ class TestBackfill(unittest.TestCase):
         self.assertEqual([i.id for i in items], ['alpaca:1', 'alpaca:2'])
         self.assertEqual(client.calls[0]['sort'], 'asc')
         self.assertEqual(client.calls[1]['page_token'], 'p2')
+
+
+class TestUniverse(unittest.TestCase):
+    def test_modes(self):
+        from newsbot import Universe
+        lst = Universe.from_config(['aapl', 'MSFT'])
+        self.assertTrue('AAPL' in lst and 'AIR.PA' not in lst and not lst.is_market_mode)
+        us = Universe.from_config('us')
+        self.assertTrue(us.is_market_mode and 'AAPL' in us and 'AIR.PA' not in us and 'BP.L' not in us)
+        eu = Universe.from_config({'markets': ['eu', 'uk'], 'exclude': ['BP.L']})
+        self.assertTrue('AIR.PA' in eu and 'BMW.DE' in eu and 'NESN.SW' in eu and 'VOD.L' in eu)
+        self.assertFalse('AAPL' in eu or 'BP.L' in eu)
+        self.assertEqual(eu.explicit, [])
+        self.assertIn('fr', eu.countries)
+        self.assertFalse(Universe.from_config(None))
+        with self.assertRaises(ValueError):
+            Universe.from_config({'markets': ['mars']})
+
+    def test_sessions_per_market(self):
+        from newsbot import Universe
+        u = Universe.from_config({'markets': ['us', 'eu', 'uk']})
+        t = datetime(2024, 3, 4, 8, 30, tzinfo=timezone.utc)     # 09:30 Paris, 08:30 London, 03:30 New York
+        self.assertTrue(u.is_open(t, 'AIR.PA'))
+        self.assertTrue(u.is_open(t, 'BP.L'))
+        self.assertFalse(u.is_open(t, 'AAPL'))
+        self.assertTrue(u.is_open(t))                              # any configured market
+        self.assertFalse(u.is_open(datetime(2024, 3, 2, 12, 0, tzinfo=timezone.utc)))   # Saturday
+        self.assertEqual(u.market_for('BMW.DE').name, 'eu')
+        self.assertEqual(u.market_for('AAPL').tz, 'America/New_York')
+
+
+class TestMarketModeSources(unittest.TestCase):
+    def test_exchange_tags_incl_europe(self):
+        ex = TickerExtractor()
+        text = ('Airbus (Euronext Paris: AIR) and BP (LSE: BP.) and Apple (NASDAQ: AAPL), $TSLA, '
+                'Nestle (SIX: NESN), BMW (XETRA: BMW), Shopify (TSX: SHOP) (NYSE: SHOP)')
+        self.assertEqual(ex.extract(text), ['AIR.PA', 'BP.L', 'AAPL', 'NESN.SW', 'BMW.DE', 'SHOP.TO', 'SHOP', 'TSLA'])
+
+    def test_wire_feed_and_dynamic_per_ticker(self):
+        from newsbot.sources import GoogleNewsRSS, WireFeed
+        w = WireFeed('globenewswire_earnings', TickerExtractor())
+        self.assertEqual(w.kind, 'filing')
+        self.assertEqual(w.markets, ['us'])
+        with self.assertRaises(ValueError):
+            WireFeed('nope', TickerExtractor())
+        active = ['AAPL']
+        g = GoogleNewsRSS(lambda: active, max_tickers=2)
+        self.assertEqual([f.name for f in g.feeds], ['google:AAPL'])
+        active += ['MSFT', 'NVDA']
+        self.assertEqual([f.name for f in g.feeds], ['google:AAPL', 'google:MSFT'])
+
+    def test_finnhub_general_uses_related(self):
+        rows = [{'id': 7, 'headline': 'Chipmakers rally', 'datetime': int(T0.timestamp()), 'related': 'NVDA,AMD',
+                 'url': 'u'},
+                {'id': 8, 'headline': 'Macro', 'datetime': int(T0.timestamp()), 'related': '', 'url': 'v'}]
+        items = FinnhubNews.parse(rows, None)
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0].tickers, ['NVDA', 'AMD'])
+
+    def test_reddit_market_mode_groups_by_cashtag(self):
+        src = RedditMentions(None, subreddits=['wallstreetbets'], min_interval=0)
+        posts = {'data': {'children': [
+            {'data': {'id': 'a', 'title': '$NVDA earnings tonight', 'selftext': '', 'created_utc': T0.timestamp(),
+                      'score': 5, 'num_comments': 1}},
+            {'data': {'id': 'b', 'title': 'YOLO $NVDA and $AMD', 'selftext': '', 'created_utc': T0.timestamp(),
+                      'score': 1, 'num_comments': 0}}]}}
+        src._get = lambda url, **p: posts  # type: ignore[method-assign]
+        items = {i.tickers[0]: i for i in src._fetch(SINCE)}
+        self.assertEqual(items['NVDA'].meta['posts'], 2)
+        self.assertEqual(items['AMD'].meta['posts'], 1)
+
+
+class TestMarketModeBot(_Fixture, unittest.TestCase):
+    def make_market(self, markets, **kw):
+        from newsbot import Universe
+        universe = Universe.from_config({'markets': markets})
+        engine = SignalEngine(min_score=0.5, target_pct=0.05, stop_pct=0.03, scale_target_by_score=False,
+                              universe=universe)
+        bot = self.make(**kw)
+        bot.engine = engine
+        bot.universe = universe
+        bot.store = EvidenceStore(universe=universe, classifier=engine.classifier)
+        self.broker.session = universe.is_open
+        return bot
+
+    def test_discovers_tickers_from_news_and_filters_by_market(self):
+        self.feed = None
+        items = [item('Airbus (Euronext Paris: AIR) beats estimates and raises guidance', tickers=['AIR.PA'], id='a'),
+                 item('Apple (NASDAQ: AAPL) beats estimates and raises guidance', tickers=['AAPL'], id='b')]
+        bot = self.make_market(['eu'], items=items, market_hours_only=False)
+        self.feed.set('AIR.PA', 150.0)
+        bot.tick()
+        self.assertEqual(sorted(bot.store.tickers()), ['AIR.PA'])
+        self.assertEqual([d['ticker'] for d in bot.state.decisions], ['AIR.PA'])
+        self.assertIn('AIR.PA', bot.state.positions)
+        self.assertNotIn('AAPL', bot.state.positions)
+        self.assertEqual(bot.summary()['universe'], 'markets eu')
+
+    def test_report_carries_market_and_local_time(self):
+        reports = []
+        bot = self.make_market(['eu', 'us'], actions=[CallbackAction(on_signal=reports.append)],
+                               items=[item('Airbus beats estimates and raises guidance', tickers=['AIR.PA'])])
+        self.feed.set('AIR.PA', 150.0)
+        bot.tick()
+        r = reports[0]
+        self.assertEqual(r.market, 'eu')
+        self.assertEqual(r.market_tz, 'Europe/Paris')
+        self.assertIn('(EU)', r.text())
+        self.assertIn('CET', r.text())
+        self.assertEqual(r.to_dict()['market'], 'eu')
+
+    def test_mixed_market_hours_per_ticker(self):
+        items = [item('Airbus beats estimates and raises guidance', tickers=['AIR.PA'], id='a'),
+                 item('Acme beats estimates and raises guidance', tickers=['ACME'], id='b')]
+        bot = self.make_market(['eu', 'us'], items=items)
+        self.feed.set('AIR.PA', 150.0)
+        self.clock.set(datetime(2024, 3, 4, 8, 30, tzinfo=timezone.utc))   # Paris open, New York closed
+        for it in items:
+            it.published = self.clock.now() - timedelta(minutes=1)
+        bot.tick()
+        self.assertIn('AIR.PA', bot.state.positions)
+        self.assertNotIn('ACME', bot.state.positions)
+        self.assertEqual([s.ticker for s in bot.state.pending.values()], ['ACME'])
+        self.clock.set(datetime(2024, 3, 4, 14, 35, tzinfo=timezone.utc))   # both open
+        bot.tick()
+        self.assertIn('ACME', bot.state.positions)
+
+    def test_prefilter_and_pass_cap_for_expensive_scorer(self):
+        calls = []
+
+        class Expensive(RuleScorer):
+            expensive = True
+
+            def score(self, b):
+                calls.append(b.ticker)
+                return super().score(b)
+
+        items = [item('Acme beats estimates and raises guidance', tickers=['ACME'], id='1'),
+                 item('Beta announces partnership with Globex', tickers=['BETA'], id='2'),   # rule 0.2 < prefilter 0.25
+                 item('Gamma to present at conference', tickers=['GAMA'], id='3'),           # rule 0
+                 item('Delta wins $10 million contract award', tickers=['DELT'], id='4')]     # rule 0.6
+        bot = self.make(items=items, scorer=Expensive(), prefilter_min_score=0.25, max_scoring_passes=1)
+        bot.tick()
+        self.assertEqual(calls, ['ACME'])                          # strongest first, capped at one pass
+        bot2 = self.make(items=items, scorer=Expensive(), prefilter_min_score=0.25, max_scoring_passes=10)
+        bot2.tick()
+        self.assertEqual(sorted(calls[1:]), ['ACME', 'DELT'])      # BETA and GAMA prefiltered
+        earn = item('ACME EPS beat', tickers=['ZETA'], id='5', kind=KIND_EARNINGS_RESULT,
+                    meta={'eps_surprise_pct': 8.0, 'verdict': 'beat'})
+        bot3 = self.make(items=[earn], scorer=Expensive(), prefilter_min_score=0.9)
+        bot3.tick()
+        self.assertEqual(calls[-1], 'ZETA')                        # reported numbers bypass the prefilter
+
+
+class TestMessengers(unittest.TestCase):
+    def test_slack_discord_dry_run_and_send(self):
+        from newsbot import DiscordAction, SlackAction
+        posted = []
+
+        class FakeResp:
+            status_code = 200
+            text = ''
+
+        import newsbot.actions as A
+        slack = SlackAction(webhook_url='https://hooks.slack.com/x', events=['signal'])
+        discord = DiscordAction(webhook_url='https://discord.com/api/webhooks/x')
+        self.assertTrue(slack.configured and discord.configured)
+        self.assertFalse(SlackAction(webhook_url='', sender=lambda t: None).configured)
+        import requests
+        orig = requests.post
+        requests.post = lambda url, **kw: posted.append((url, kw['json'])) or FakeResp()  # type: ignore[assignment]
+        try:
+            slack.send('hello')
+            discord.send('x' * 5000)
+        finally:
+            requests.post = orig  # type: ignore[assignment]
+        self.assertEqual(posted[0][0], 'https://hooks.slack.com/x')
+        self.assertEqual(posted[0][1], {'text': '```hello```'})
+        self.assertLessEqual(len(posted[1][1]['content']), 1906)   # Discord 2000-char limit respected
+        self.assertIs(A.MessengerAction, SlackAction.__mro__[1])
 
 
 if __name__ == '__main__':

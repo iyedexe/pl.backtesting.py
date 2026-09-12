@@ -8,9 +8,9 @@ import json
 import logging
 from datetime import timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, Union
 
-from .actions import Action, LogAction, TelegramAction, TradeAction, WebhookAction
+from .actions import Action, DiscordAction, LogAction, SlackAction, TelegramAction, TradeAction, WebhookAction
 from .aggregator import EvidenceStore
 from .bot import NewsTradingBot
 from .brokers import Broker, PaperBroker
@@ -20,19 +20,20 @@ from .prices import CSVPriceFeed, PriceFeed, StaticPriceFeed, YFinancePriceFeed
 from .scoring import RuleScorer, Scorer
 from .signals import SignalEngine
 from .sources import (FileNewsSource, GoogleNewsRSS, NasdaqRSS, NewsSource, RSSNewsSource, TickerExtractor,
-                      YahooFinanceRSS)
+                      WireFeed, YahooFinanceRSS)
 from .state import BotState
+from .universe import Universe
 
 log = logging.getLogger(__name__)
 
 DEFAULT_CONFIG: Dict[str, Any] = {
-    'universe': [],
+    'universe': [],                      # list of tickers, or {markets: [us, eu, uk]} to listen to whole markets
     'aliases': {},                       # ticker -> company names, for sources that never print tickers
     'api_keys': {},                      # provider -> key (else FINNHUB_API_KEY etc. from the environment)
     'sources': [{'type': 'yahoo'}],
     'classifier': {'type': 'rules'},     # per-headline rule scoring (features + backtests)
     'scoring': {'type': 'rules', 'model': 'claude-opus-5', 'effort': 'medium', 'window_hours': 24,
-                'max_event_age_hours': 12},
+                'max_event_age_hours': 12, 'prefilter_min_score': 0.2, 'max_passes_per_tick': 25},
     'actions': [{'type': 'trade'}],
     'signals': {'min_score': 0.5, 'target_pct': 0.05, 'stop_pct': 0.03, 'max_hold_days': 7,
                 'signal_ttl_hours': 18, 'scale_target_by_score': True, 'categories': [], 'blocked_categories': []},
@@ -102,17 +103,24 @@ PROVIDER_KEY_NAMES = {'finnhub': 'finnhub', 'finnhub_earnings': 'finnhub', 'alph
                       'fmp_earnings': 'fmp'}
 
 
+def build_universe(cfg: Dict[str, Any]) -> Universe:
+    return Universe.from_config(cfg.get('universe'))
+
+
 def build_extractor(cfg: Dict[str, Any]) -> TickerExtractor:
-    universe = [t.upper() for t in cfg.get('universe') or []]
-    return TickerExtractor(universe, aliases=cfg.get('aliases') or {})
+    return TickerExtractor(build_universe(cfg).explicit, aliases=cfg.get('aliases') or {})
 
 
 def build_source(s: Dict[str, Any], cfg: Dict[str, Any], alpaca: '_AlpacaHolder',
-                 extractor: Optional[TickerExtractor] = None) -> NewsSource:
+                 extractor: Optional[TickerExtractor] = None,
+                 active: Optional[Callable[[], List[str]]] = None) -> NewsSource:
+    """`active` (market mode) supplies the tickers currently carrying evidence, so per-ticker feeds can
+    follow the market without a fixed list."""
     from . import providers as P  # noqa: PLC0415, N812
     kind = s.get('type')
-    universe = [t.upper() for t in cfg.get('universe') or []]
-    tickers = [t.upper() for t in (s.get('tickers') or s.get('symbols') or universe)]
+    universe = build_universe(cfg)
+    spec_tickers = s.get('tickers') or s.get('symbols')
+    tickers = [t.upper() for t in (spec_tickers if isinstance(spec_tickers, list) else universe.explicit)]
     extractor = extractor or build_extractor(cfg)
     common: Dict[str, Any] = {}
     if s.get('min_interval_seconds') is not None:
@@ -125,9 +133,11 @@ def build_source(s: Dict[str, Any], cfg: Dict[str, Any], alpaca: '_AlpacaHolder'
         api_kw['base_url'] = s['base_url']
 
     def need_tickers():
-        if not tickers:
-            raise ValueError(f'{kind} source needs `tickers` or a non-empty `universe`')
-        return tickers
+        if tickers:
+            return tickers
+        if active is not None and (spec_tickers == 'active' or universe.is_market_mode):
+            return active                 # per-ticker feeds follow the tickers currently in play
+        raise ValueError(f'{kind} source needs `tickers`, a ticker-list `universe`, or market mode with `active`')
 
     if kind == 'file':
         return FileNewsSource(s['path'])
@@ -140,6 +150,8 @@ def build_source(s: Dict[str, Any], cfg: Dict[str, Any], alpaca: '_AlpacaHolder'
         return GoogleNewsRSS(need_tickers(), **common)
     if kind == 'nasdaq_rss':
         return NasdaqRSS(need_tickers(), **common)
+    if kind == 'wire':
+        return WireFeed(s['feed'], extractor, url=s.get('url'), **common)
     if kind == 'alpaca':
         from .alpaca import AlpacaNewsSource  # noqa: PLC0415
         return AlpacaNewsSource(alpaca.client(), symbols=tickers or None, limit=int(s.get('limit', 50)))
@@ -148,11 +160,11 @@ def build_source(s: Dict[str, Any], cfg: Dict[str, Any], alpaca: '_AlpacaHolder'
     if kind == 'finnhub_earnings':
         return P.FinnhubEarningsCalendar(tickers, **api_kw)
     if kind == 'alphavantage':
-        return P.AlphaVantageNews(tickers, **api_kw)
+        return P.AlphaVantageNews(tickers, topics=s.get('topics'), **api_kw)
     if kind == 'polygon':
         return P.PolygonNews(tickers, **api_kw)
     if kind == 'marketaux':
-        return P.MarketauxNews(tickers, **api_kw)
+        return P.MarketauxNews(tickers, countries=s.get('countries') or universe.countries or None, **api_kw)
     if kind == 'newsapi':
         return P.NewsAPINews(tickers, extractor=extractor, queries=s.get('queries'), **api_kw)
     if kind == 'fmp':
@@ -172,15 +184,16 @@ def build_source(s: Dict[str, Any], cfg: Dict[str, Any], alpaca: '_AlpacaHolder'
             raise ValueError('clinicaltrials source needs `sponsors` ({ticker: [names]}) or `aliases`')
         return P.ClinicalTrialsSource(sponsors, **api_kw)
     if kind == 'stocktwits':
-        return P.StockTwitsStream(need_tickers(), **api_kw)
+        return P.StockTwitsStream(tickers, max_trending=int(s.get('max_trending', 15)), **api_kw)
     if kind == 'reddit':
-        return P.RedditMentions(need_tickers(), subreddits=s.get('subreddits'), **api_kw)
+        return P.RedditMentions(tickers, subreddits=s.get('subreddits'), **api_kw)
     raise ValueError(f'unknown news source type {kind!r}')
 
 
-def build_sources(cfg: Dict[str, Any], alpaca: '_AlpacaHolder') -> List[NewsSource]:
+def build_sources(cfg: Dict[str, Any], alpaca: '_AlpacaHolder',
+                  active: Optional[Callable[[], List[str]]] = None) -> List[NewsSource]:
     extractor = build_extractor(cfg)
-    return [build_source(s, cfg, alpaca, extractor) for s in cfg.get('sources', [])]
+    return [build_source(s, cfg, alpaca, extractor, active) for s in cfg.get('sources', [])]
 
 
 def build_scorer(cfg: Dict[str, Any]) -> Scorer:
@@ -209,6 +222,12 @@ def build_actions(cfg: Dict[str, Any]) -> List[Action]:
         elif kind == 'telegram':
             out.append(TelegramAction(a.get('token'), a.get('chat_id'), events=events,
                                       include_evidence=bool(a.get('include_evidence', True))))
+        elif kind == 'slack':
+            out.append(SlackAction(a.get('webhook_url'), events=events,
+                                   include_evidence=bool(a.get('include_evidence', True))))
+        elif kind == 'discord':
+            out.append(DiscordAction(a.get('webhook_url'), events=events,
+                                     include_evidence=bool(a.get('include_evidence', True))))
         elif kind == 'webhook':
             out.append(WebhookAction(a['url'], events=events, headers=a.get('headers')))
         elif kind == 'log':
@@ -239,7 +258,7 @@ def build_broker(cfg: Dict[str, Any], alpaca: _AlpacaHolder, feed: PriceFeed, cl
     if kind == 'paper':
         return PaperBroker(feed, cash=float(b.get('cash', 100000)), clock=clock,
                            commission=float(b.get('commission', 0.0)), slippage_bps=float(b.get('slippage_bps', 0.0)),
-                           always_open=bool(b.get('always_open', False)))
+                           always_open=bool(b.get('always_open', False)), session=build_universe(cfg).is_open)
     if kind == 'alpaca':
         from .alpaca import AlpacaBroker  # noqa: PLC0415
         if not b.get('paper', True):
@@ -257,7 +276,7 @@ def build_engine(cfg: Dict[str, Any], classifier: Optional[Classifier] = None) -
                         max_hold_days=float(s.get('max_hold_days', 7)),
                         signal_ttl=timedelta(hours=float(s.get('signal_ttl_hours', 18))),
                         scale_target_by_score=bool(s.get('scale_target_by_score', True)),
-                        universe=cfg.get('universe') or None,
+                        universe=build_universe(cfg),
                         categories=s.get('categories') or None,
                         blocked_categories=s.get('blocked_categories') or None)
 
@@ -273,18 +292,20 @@ def build_bot(config: Optional[Dict[str, Any]] = None, *, clock: Optional[Clock]
     alpaca = _AlpacaHolder(cfg)
     feed = price_feed or build_price_feed(cfg, alpaca, clock)
     broker = broker or build_broker(cfg, alpaca, feed, clock)
-    sources = sources if sources is not None else build_sources(cfg, alpaca)
     b = cfg['bot']
     sc = cfg.get('scoring', {})
     if state is None:
         state = BotState(b.get('state_file'))
     engine = build_engine(cfg, classifier)
     store = EvidenceStore(window=timedelta(hours=float(sc.get('window_hours', 24))), classifier=engine.classifier,
-                          universe=engine.universe or None)
+                          universe=engine.universe)
+    sources = sources if sources is not None else build_sources(cfg, alpaca, active=store.tickers)
     return NewsTradingBot(
         sources=sources, engine=engine, broker=broker, price_feed=feed, state=state, clock=clock,
         store=store, scorer=scorer or build_scorer(cfg), actions=actions if actions is not None else build_actions(cfg),
         max_event_age=timedelta(hours=float(sc.get('max_event_age_hours', 12))),
+        prefilter_min_score=float(sc.get('prefilter_min_score', 0.2)),
+        max_scoring_passes=int(sc.get('max_passes_per_tick', 25)),
         max_positions=int(b.get('max_positions', 5)),
         position_size_pct=float(b.get('position_size_pct', 0.2)),
         risk_per_trade_pct=(float(b['risk_per_trade_pct']) if b.get('risk_per_trade_pct') else None),

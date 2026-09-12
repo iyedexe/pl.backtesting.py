@@ -8,7 +8,8 @@ holding period, built on top of backtesting.py.
 
 See `newsbot/README.md`.
 """
-from .actions import Action, CallbackAction, LogAction, TelegramAction, TradeAction, WebhookAction
+from .actions import (Action, CallbackAction, DiscordAction, LogAction, SignalReport, SlackAction, TelegramAction,
+                      TradeAction, WebhookAction)
 from .aggregator import Bundle, EvidenceStore
 from .bot import NewsTradingBot
 from .brokers import Broker, BrokerError, PaperBroker
@@ -22,9 +23,11 @@ from .signals import SignalEngine
 from .sources import FileNewsSource, NewsSource, RSSNewsSource, YahooFinanceRSS
 from .state import BotState
 from .strategy import NewsStrategy, align_news_scores, run_news_backtest
+from .universe import MARKETS, Market, Universe
 
 __all__ = [
-    'Action', 'CallbackAction', 'LogAction', 'TelegramAction', 'TradeAction', 'WebhookAction',
+    'Action', 'CallbackAction', 'DiscordAction', 'LogAction', 'SignalReport', 'SlackAction', 'TelegramAction',
+    'TradeAction', 'WebhookAction', 'MARKETS', 'Market', 'Universe',
     'Bundle', 'EvidenceStore', 'ClaudeScorer', 'RuleScorer', 'Scorer',
     'NewsTradingBot', 'Broker', 'BrokerError', 'PaperBroker', 'Classifier', 'RuleClassifier',
     'SimClock', 'SystemClock', 'build_bot', 'load_config', 'merge_config',
