@@ -33,7 +33,7 @@ from .screening import expected_false_positives, screen_panel
 from .stats import engle_granger
 from .walkforward import walk_forward_pair, walk_forward_portfolio
 
-REPORTS = data._REPO_ROOT / 'research' / 'reports'
+REPORTS = data._EXAMPLES_ROOT / 'research' / 'reports'
 FIG = REPORTS / 'figures'
 TAB = REPORTS / 'tables'
 FRAG = REPORTS / '_fragments'

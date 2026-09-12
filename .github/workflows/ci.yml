@@ -15,9 +15,9 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with: { enable-cache: true }
       - run: uv sync --locked --python 3.13
-      - run: uv run flake8 backtesting pairs_trading pmcc scripts tests examples
+      - run: uv run flake8 backtesting examples tests
       # Upstream backtesting/ predates the ruff config; hold new code to it
-      - run: uv run ruff check pairs_trading scripts tests examples
+      - run: uv run ruff check examples/pairs_trading examples/index_inclusion examples/scripts examples/*.py tests
       - run: uv run mypy --no-warn-unused-ignores backtesting
 
   library:
@@ -67,8 +67,9 @@ jobs:
       - run: uv run inclusion-bot selftest
       # Smoke-run one small end-to-end experiment per strategy
       - run: uv run pairs run --study commodities --quick
-      - run: uv run python examples/run_index_inclusion.py --quick
-      - run: uv run python examples/run_pmcc.py --quick
+      - run: uv run python examples/pairs_trading_strategy.py --quick
+      - run: uv run python examples/index_inclusion_strategy.py --quick
+      - run: uv run python examples/pmcc_strategy.py --quick
 
   docs:
     needs: lint

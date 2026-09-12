@@ -13,15 +13,12 @@ factored into functions so that it can be swept and re-seeded programmatically
 
 from .screener import build_tape, find_windows, rank_daily
 from .simulate import Market, MarketParams, make_market
-from .strategy import IndexInclusion, run_backtest
 
 __all__ = [
-    'IndexInclusion',
     'Market',
     'MarketParams',
     'build_tape',
     'find_windows',
     'make_market',
     'rank_daily',
-    'run_backtest',
 ]

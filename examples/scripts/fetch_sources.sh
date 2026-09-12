@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Fetch the raw public data sources used to build research/data/vendored/.
 # Usage: scripts/fetch_sources.sh <target-dir>
-# Then:  uv run python scripts/build_vendored_data.py --src <target-dir>
+# Then:  uv run python examples/scripts/build_vendored_data.py --src <target-dir>
 set -euo pipefail
 DEST=${1:?usage: fetch_sources.sh <target-dir>}
 mkdir -p "$DEST" && cd "$DEST"

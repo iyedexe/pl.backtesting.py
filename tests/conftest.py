@@ -1,6 +1,12 @@
+import sys
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 import pytest
+
+# The example scripts are importable modules too (they define the Strategy classes).
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'examples'))
 
 
 def simulate_ou(n: int, kappa: float, sigma: float = 0.02, mu: float = 0.0,

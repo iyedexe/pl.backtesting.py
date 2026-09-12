@@ -2,7 +2,7 @@
 
 Every loader returns a wide ``pd.DataFrame`` indexed by a naive ``DatetimeIndex``
 with one column per instrument, prices quoted in USD. See
-``research/data/SOURCES.md`` for provenance, licenses and caveats.
+``examples/research/data/SOURCES.md`` for provenance, licenses and caveats.
 """
 
 from __future__ import annotations
@@ -12,8 +12,8 @@ from pathlib import Path
 
 import pandas as pd
 
-_REPO_ROOT = Path(__file__).resolve().parent.parent
-VENDOR_DIR = _REPO_ROOT / 'research' / 'data' / 'vendored'
+_EXAMPLES_ROOT = Path(__file__).resolve().parent.parent
+VENDOR_DIR = _EXAMPLES_ROOT / 'research' / 'data' / 'vendored'
 
 _PANEL_FILES = {
     'crypto': 'crypto_usd_daily.csv.gz',
@@ -30,7 +30,7 @@ def _read(name: str) -> pd.DataFrame:
         raise FileNotFoundError(
             f'{path} not found. Re-create the vendored data with '
             f'scripts/fetch_sources.sh + scripts/build_vendored_data.py '
-            f'(see research/data/SOURCES.md).')
+            f'(see examples/research/data/SOURCES.md).')
     df = pd.read_csv(path, index_col=0, parse_dates=True)
     df = df.sort_index()
     df.index.name = 'date'

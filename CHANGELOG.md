@@ -9,21 +9,26 @@ These were the major changes contributing to each release:
 This fork of backtesting.py bundles three independent strategy studies,
 each with its own package, data and write-up, under one uv-managed project:
 
-* `pairs_trading/` — cointegration pairs trading (statistical arbitrage)
+* `examples/pairs_trading/` — cointegration pairs trading (statistical arbitrage)
   backtested walk-forward on crypto, US stocks, forex, commodities and
   cross-asset pairs: Engle-Granger/half-life/Hurst statistics, Kalman
   hedge ratios, a two-leg dollar-neutral engine, universe screening,
-  deflated-Sharpe grids; `pairs` CLI and `research/reports/report.md`.
-* `pmcc/` — Poor Man's Covered Call on 17 French large caps 2000-2015
+  deflated-Sharpe grids; `pairs` CLI and `examples/research/reports/report.md`.
+* `examples/pmcc/` — Poor Man's Covered Call on 17 French large caps 2000-2015
   with synthetic option pricing, benchmarks, an 800-run sensitivity grid
-  and a paper-trading execution scaffold; `pmcc` CLI and `pmcc/README.md`.
-* `index_inclusion/` + `doc/examples/Index Inclusion Strategy` — trading
+  and a paper-trading execution scaffold; `pmcc` CLI and `examples/pmcc/README.md`.
+* `examples/index_inclusion/` + `doc/examples/Index Inclusion Strategy` — trading
   the index effect on a synthetic point-in-time market with a mechanical
   FTSE-100-style rulebook; `bot/` is a Telegram signal bot (uv workspace
   member `inclusion-bot`) applying it to live S&P 500 / Nasdaq-100 /
   FTSE 100 / DAX 40 data.
-* `examples/` — one runnable script per strategy that sweeps its
-  parameters and plots the best-performing configuration.
+* All three strategies run **on the backtesting.py framework** as
+  `Strategy` subclasses in `examples/` (`pairs_trading_strategy.py`,
+  `pmcc_strategy.py`, `index_inclusion_strategy.py`): pairs as a
+  walk-forward hedged-spread tape with per-leg commission callback, PMCC
+  as a framework-traded package index with a regime filter, index
+  inclusion on a stitched tape — each optimized with `bt.optimize` and
+  charted; the support packages, data and reports live under `examples/`.
 * Packaging: PEP 621 `pyproject.toml` replaces `setup.py`; the project
   requires Python >= 3.13 and is managed with [uv](https://docs.astral.sh/uv/)
   (single committed `uv.lock`, `bot/` as a workspace member); CI runs on

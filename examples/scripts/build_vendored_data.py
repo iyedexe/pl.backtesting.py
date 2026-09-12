@@ -1,15 +1,15 @@
 """Build the compact vendored datasets in ``research/data/vendored/`` from raw sources.
 
-The raw sources are public GitHub repositories (see ``scripts/fetch_sources.sh`` and
+The raw sources are public GitHub repositories (see ``examples/scripts/fetch_sources.sh`` and
 ``research/data/SOURCES.md``).  This script normalizes them into small, analysis-ready
 ``.csv.gz`` panels that are committed to the repository so that every experiment in the
 project is exactly reproducible offline.
 
 Usage::
 
-    uv run python scripts/build_vendored_data.py --src /path/to/raw/clones
+    uv run python examples/scripts/build_vendored_data.py --src /path/to/raw/clones
 
-The layout expected under ``--src`` is the one produced by ``scripts/fetch_sources.sh``:
+The layout expected under ``--src`` is the one produced by ``examples/scripts/fetch_sources.sh``:
 
     exchange-rates/   github.com/datasets/exchange-rates   (US Fed H.10 via FRED)
     oil-prices/       github.com/datasets/oil-prices       (US EIA)
@@ -29,8 +29,8 @@ from pathlib import Path
 
 import pandas as pd
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
-OUT_DIR = REPO_ROOT / 'research' / 'data' / 'vendored'
+EXAMPLES_ROOT = Path(__file__).resolve().parent.parent
+OUT_DIR = EXAMPLES_ROOT / 'research' / 'data' / 'vendored'
 
 #: FRED H.10 country -> ISO currency code. All rates in the datahub mirror are quoted
 #: as *national currency units per one U.S. dollar* (verified in tests below).

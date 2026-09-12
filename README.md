@@ -7,19 +7,22 @@ package, vendored data, tests and write-up, in one
 
 | Strategy | What it trades | Where it's tested | Verdict (details below) |
 |---|---|---|---|
-| **Pairs trading** (`pairs_trading/`) | the spread between two cointegrated assets, walk-forward | crypto, US stocks, forex, commodities, cross-asset; 1971→2026 | only the WTI/Brent oil spread survives out of sample; famous stock/FX/crypto pairs don't |
-| **Poor Man's Covered Call** (`pmcc/`) | deep-ITM LEAPS call + short monthly call | 17 French large caps, 2000→2015, synthetic option chains | covered-call-like returns with roughly half the drawdown, ~2 pp/yr less than the covered call |
-| **Index inclusion** (`index_inclusion/`, `bot/`) | stocks about to be added to a rules-based index | synthetic point-in-time market with an FTSE-100 rulebook; live bot for S&P 500 / Nasdaq-100 / FTSE 100 / DAX 40 | the machinery captures the planted index effect; the real edge today is small in mega caps |
+| **Pairs trading** (`examples/pairs_trading/`) | the spread between two cointegrated assets, walk-forward | crypto, US stocks, forex, commodities, cross-asset; 1971→2026 | only the WTI/Brent oil spread survives out of sample; famous stock/FX/crypto pairs don't |
+| **Poor Man's Covered Call** (`examples/pmcc/`) | deep-ITM LEAPS call + short monthly call | 17 French large caps, 2000→2015, synthetic option chains | covered-call-like returns with roughly half the drawdown, ~2 pp/yr less than the covered call |
+| **Index inclusion** (`examples/index_inclusion/`, `bot/`) | stocks about to be added to a rules-based index | synthetic point-in-time market with an FTSE-100 rulebook; live bot for S&P 500 / Nasdaq-100 / FTSE 100 / DAX 40 | the machinery captures the planted index effect; the real edge today is small in mega caps |
 
-`examples/` contains one runnable script per strategy that sweeps its
-parameters and plots the **best-performing configuration**
-([examples/README.md](examples/README.md)):
+**All three strategies run on the backtesting.py framework** — one
+`Strategy` subclass per script in `examples/`, executed, costed, optimized
+(`bt.optimize`) and charted by the framework, with the strategy-specific
+machinery (cointegration statistics, option pricing, the index simulator)
+living in support packages under `examples/`. Each script finds and plots the
+**best-performing configuration** ([examples/README.md](examples/README.md)):
 
-| Strategy | Best configuration found | Sharpe (best / default / benchmark) |
-|---|---|---|
-| Pairs trading — WTI/Brent, walk-forward OOS | enter 2.5σ, exit 0, 20-bar z-window | **0.55** / 0.39 / 0.42 without the cointegration gate (3.5× the drawdown) |
-| Poor Man's Covered Call — 10 French large caps | short δ 0.35, LEAPS ≥ 720 d | **0.83** / 0.58 / covered call 0.62, buy & hold 0.36 |
-| Index inclusion — synthetic SIX 100 | hold ≤ 25, buffer 2, hunt 15 d pre-cutoff | **1.39** / 1.27 on the tutorial seed — but 0.86 / 0.86 averaged over fresh seeds |
+| Strategy | Best configuration (`bt.optimize`) | Sharpe: best / default / benchmark | Does it hold up? |
+|---|---|---|---|
+| Pairs trading — WTI/Brent, walk-forward OOS | enter 2.5σ, exit 0, 20-bar z-window | **0.52** / 0.35 / two-leg engine agrees on 79 of 79 trades | same 8% drawdown, fewer trades; default has NW t ≈ 3 |
+| Poor Man's Covered Call — 10 French large caps | step aside at realized vol > 0.35, back in < 0.30 | **0.77** / 0.73 always-in / covered call 0.66, buy & hold 0.37 | the filter loses on 10/10 single names — always-in is the answer |
+| Index inclusion — synthetic SIX 100 | hold ≤ 25, buffer 2, hunt 15 d pre-cutoff | **1.39** / 1.27 / — | 0.86 vs 0.86 on fresh market seeds — the peak is noise |
 
 | Pairs trading | Poor Man's Covered Call | Index inclusion |
 |---|---|---|
@@ -33,12 +36,12 @@ uv sync                                   # Python 3.13 env from uv.lock (uv fet
 uv run pytest                             # all strategy unit tests (pairs, pmcc, bot)
 uv run python -m backtesting.test         # the upstream library's own suite
 
-uv run python examples/run_pairs_trading.py     # best pairs configuration + figures
-uv run python examples/run_pmcc.py              # best PMCC configuration + figures
-uv run python examples/run_index_inclusion.py   # best index-inclusion configuration + figures
+uv run python examples/pairs_trading_strategy.py     # pairs on the framework: rank, optimize, plot
+uv run python examples/pmcc_strategy.py              # PMCC index + regime filter on the framework
+uv run python examples/index_inclusion_strategy.py   # index inclusion on the framework
 
-uv run pairs all                          # full five-asset-class pairs study -> research/reports/report.md
-uv run pmcc all                           # full PMCC headline + 800-run sensitivity -> pmcc/results/
+uv run pairs all                          # full five-asset-class pairs study -> examples/research/reports/report.md
+uv run pmcc all                           # full PMCC headline + 800-run sensitivity -> examples/pmcc/results/
 uv run inclusion-bot selftest             # offline demo cycle of the Telegram bot
 ```
 
@@ -49,7 +52,7 @@ for a small smoke run.
 
 ## The three strategies
 
-### 1. Pairs trading across asset classes — `pairs_trading/`
+### 1. Pairs trading across asset classes — `examples/pairs_trading_strategy.py`
 
 Buy one asset, short its statistical twin when the spread is stretched, bet on
 convergence. The classic Engle-Granger / z-score version of the strategy,
@@ -60,7 +63,7 @@ per-leg costs, a proper two-leg engine, deflated-Sharpe grids — and run on rea
 daily data: 13 cryptos, 505 S&P 500 names, 11 currencies, WTI/Brent/gas, and
 cross-asset pairs (petro-currency, BTC vs tokenized gold).
 
-**Findings** ([full report](research/reports/report.md)): once the future is
+**Findings** ([full report](examples/research/reports/report.md)): once the future is
 kept out of the estimation, the formation-window cointegration gate opens on
 only 4–12% of windows for famous stock/FX/crypto pairs — the test's own 5%
 false-positive rate (Clegg 2014). The one robust survivor is **WTI/Brent**:
@@ -72,15 +75,21 @@ nets a Sharpe of 0.02 (the Do & Faff decay); same-close execution doubles
 measured Sharpe (Gatev-Goetzmann-Rouwenhorst's "wait one day" artifact,
 reproduced).
 
-Package map: `data.py` (vendored panels), `stats.py` (Engle-Granger, ADF,
-half-life, Hurst, Kalman hedge), `signals.py` (z-score state machine),
-`engine.py` (two-leg dollar-neutral backtester), `walkforward.py`
-(formation/trading harness, top-N portfolio re-selection), `screening.py`,
-`metrics.py` (Newey-West, deflated Sharpe), `experiments.py`, `cli.py`
-(`pairs`). Data provenance and licenses: [research/data/SOURCES.md](research/data/SOURCES.md)
+**On the framework:** `examples/pairs_trading_strategy.py` feeds each pair
+to backtesting.py as one synthetic instrument — per walk-forward window the
+hedged spread `A − β·B` in window-normalized dollars, β fitted on the
+formation window only — so a position of N units is exactly the two-leg
+trade (its P&L reproduces the two-leg engine's to the trade: 79 vs 79 trades
+on WTI/Brent). Per-leg costs go through a commission callback, the z-score
+rule is `PairsTrading.next()`, and `bt.optimize` sweeps the thresholds.
+Support package `examples/pairs_trading/`: `data.py` (vendored panels),
+`stats.py` (Engle-Granger, ADF, half-life, Hurst, Kalman hedge), `signals.py`,
+`engine.py` (the independent two-leg engine used as cross-check),
+`walkforward.py`, `screening.py`, `metrics.py` (Newey-West, deflated Sharpe),
+`experiments.py`, `cli.py` (`pairs`). Data provenance and licenses: [examples/research/data/SOURCES.md](examples/research/data/SOURCES.md)
 (the crypto panel is Coin Metrics community data, CC BY-NC 4.0).
 
-### 2. Poor Man's Covered Call — `pmcc/`
+### 2. Poor Man's Covered Call — `examples/pmcc_strategy.py`
 
 Replace the 100 shares of a covered call with a deep-in-the-money LEAPS call
 (~0.80 delta, 18–24 months out) and sell the same ~0.25-delta monthly call
@@ -91,16 +100,25 @@ VIX/realized vol, dividends, EUR rates, French FTT, spreads and commissions —
 against covered-call, buy-and-hold and LEAPS-only benchmarks priced with the
 same model, plus an 800-run sensitivity grid.
 
-**Findings** ([pmcc/README.md](pmcc/README.md), [results](pmcc/results/RESULTS.md)):
+**Findings** ([examples/pmcc/README.md](examples/pmcc/README.md), [results](examples/pmcc/results/RESULTS.md)):
 equal-weight portfolio of the 10 most option-liquid names, net of costs —
 PMCC CAGR 12.9% with a −23% max drawdown vs covered call 16.5% / −41% and buy
 & hold 11.1% / −50%. The PMCC held up structurally through two −50% bear
 markets, but French dividend yields hand the classic covered call ~2 pp/yr
 more; everything rides on implied vol trading rich to realized; the leveraged
 sizing variant is a ruin machine (−58% portfolio, −95% single-name).
-`pmcc/live/` holds a paper-trading executor that reuses the same decision code.
+`examples/pmcc/live/` holds a paper-trading executor that reuses the same
+decision code.
 
-### 3. Index inclusion — `index_inclusion/`, `doc/examples/`, `bot/`
+**On the framework:** backtesting.py cannot hold option legs, so
+`examples/pmcc_strategy.py` prices the mechanical package into a daily
+total-return index per stock with the `pmcc` engine (the CBOE-BXM idea) and
+the framework trades that index: `PMCCRegime` steps aside when the
+underlying's realized volatility spikes and re-enters when it calms,
+`bt.optimize` finds the thresholds, `MultiBacktest` checks them name by name,
+and the covered-call and buy-and-hold indices are benchmarked the same way.
+
+### 3. Index inclusion — `examples/index_inclusion_strategy.py`, `bot/`
 
 When a stock is added to a major index, every tracker must buy it by the
 effective date; rank-based rulebooks (FTSE 100, Nasdaq-100, Russell) make the
@@ -109,8 +127,10 @@ additions **computable before they are announced**. The tutorial notebook
 builds a synthetic point-in-time market of 220 stocks with a fictional
 "SIX 100" index under the FTSE 100 rulebook, injects a 1990s-sized index
 effect, screens weekly without look-ahead, and trades one stock at a time
-through `backtesting.py` on a stitched tape. `index_inclusion/` is that
-machinery as an importable package; `bot/` (`inclusion-bot`, a uv workspace
+through `backtesting.py` on a stitched tape. `examples/index_inclusion_strategy.py`
+is that strategy on the framework, with `bt.optimize` over the holding period
+and a fresh-seed generalization check; `examples/index_inclusion/` is the
+simulator and screener as a package; `bot/` (`inclusion-bot`, a uv workspace
 member) applies the same screens to live data and pushes buy/sell signals to
 Telegram ([bot/README.md](bot/README.md)).
 
@@ -124,23 +144,28 @@ real announcement-to-effective effect is mostly arbitraged away
 ## Layout
 
 ```
-backtesting/         the upstream backtesting.py library (kept working; AGPL-3.0)
-pairs_trading/       pairs-trading research lab (+ research/data, research/reports)
-pmcc/                Poor Man's Covered Call lab (+ data/, results/, live/)
-index_inclusion/     index-inclusion strategy package (simulator, screener, strategy)
-bot/                 inclusion-bot: Telegram index-inclusion signals (uv workspace member)
-examples/            one best-configuration script per strategy + figures/
-doc/examples/        upstream tutorials + the Index Inclusion Strategy notebook
-tests/               pairs_trading test suite (pmcc/test_pmcc.py, bot/tests: theirs)
-scripts/             data fetch/build scripts for the vendored pairs panels
+backtesting/                    the upstream backtesting.py library (kept working; AGPL-3.0)
+examples/
+  pairs_trading_strategy.py     pairs trading on the framework (rank, optimize, plot)
+  pmcc_strategy.py              PMCC index + regime filter on the framework
+  index_inclusion_strategy.py   index inclusion on the framework
+  figures/, tables/             generated best-configuration graphs and tables
+  pairs_trading/                pairs support package (stats, two-leg engine, data, `pairs` CLI)
+  pmcc/                         PMCC support package (option pricing/engine, data/, results/, live/)
+  index_inclusion/              index-inclusion support package (market simulator, screener)
+  research/                     pairs vendored data + generated report
+  scripts/                      data fetch/build scripts for the vendored pairs panels
+bot/                            inclusion-bot: Telegram index-inclusion signals (uv workspace member)
+doc/examples/                   upstream tutorials + the Index Inclusion Strategy notebook
+tests/                          test suites (plus examples/pmcc/test_pmcc.py and bot/tests)
 ```
 
 ## Development
 
 ```bash
 uv sync --extra test --extra doc     # everything incl. the library's test/doc extras
-uv run flake8 backtesting pairs_trading pmcc scripts tests examples
-uv run ruff check pairs_trading scripts tests examples
+uv run flake8 backtesting examples tests
+uv run ruff check examples tests
 uv run mypy --no-warn-unused-ignores backtesting
 uv run doc/build.sh                  # API docs + rendered example notebooks
 ```

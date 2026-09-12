@@ -77,7 +77,7 @@ def main(argv: list[str] | None = None) -> int:
     pa.add_argument('--quick', action='store_true')
     pa.set_defaults(func=_cmd_run, study='all')
 
-    pp = sub.add_parser('report', help='assemble research/reports/report.md')
+    pp = sub.add_parser('report', help='assemble examples/research/reports/report.md')
     pp.set_defaults(func=_cmd_report)
 
     args = p.parse_args(argv)

@@ -1,6 +1,6 @@
 """Performance and statistical-significance metrics for pair backtests.
 
-Conventions follow the stat-arb literature (see research/reports/report.md):
+Conventions follow the stat-arb literature (see examples/research/reports/report.md):
 Sharpe annualized with the class-appropriate period count (252 trading days,
 365 calendar days for crypto), Newey-West HAC t-statistics on mean daily
 returns, and the Bailey & López de Prado (2014) deflated Sharpe ratio for

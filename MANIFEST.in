@@ -3,4 +3,4 @@ exclude .*
 
 recursive-exclude .* *
 recursive-exclude doc *
-prune pmcc/results
+prune examples/pmcc/results

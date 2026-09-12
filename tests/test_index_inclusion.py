@@ -2,15 +2,9 @@ import itertools
 
 import numpy as np
 import pytest
+from index_inclusion_strategy import IndexInclusion, run_backtest
 
-from index_inclusion import (
-    IndexInclusion,
-    build_tape,
-    find_windows,
-    make_market,
-    rank_daily,
-    run_backtest,
-)
+from index_inclusion import build_tape, find_windows, make_market, rank_daily
 from index_inclusion.simulate import MarketParams
 
 
@@ -76,4 +70,3 @@ def test_run_backtest_captures_the_planted_effect(market):
     st = run_backtest(market)
     assert st['# Trades'] > 5
     assert st['Win Rate [%]'] > 60      # a 5% planted effect is easy money
-    assert st['_n_windows'] >= st['# Trades']

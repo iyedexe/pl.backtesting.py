@@ -4,11 +4,11 @@
 _version.py
 
 # Generated research artifacts ARE committed
-!research/reports/**/*.png
-!research/reports/**/*.html
+!examples/research/reports/**/*.png
+!examples/research/reports/**/*.html
 
 # Local research scratch
-research/data/raw/
+examples/research/data/raw/
 
 *.egg-info
 .eggs/*
@@ -36,8 +36,9 @@ paper_broker_*.json
 STOP
 
 # but keep generated pmcc result charts
-!pmcc/results/*.png
-pmcc/results/all_curves.csv.gz
+!examples/pmcc/results/*.png
+examples/pmcc/results/all_curves.csv.gz
 
 # strategy example figures are committed
 !examples/figures/*.png
+!examples/figures/*.html

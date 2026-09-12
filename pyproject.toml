@@ -92,6 +92,7 @@ inclusion-bot = { workspace = true }
 include-package-data = true
 
 [tool.setuptools.packages.find]
+where = [".", "examples"]
 include = ["backtesting*", "pairs_trading*", "pmcc*", "index_inclusion*"]
 
 [tool.setuptools.package-data]
@@ -99,13 +100,14 @@ backtesting = ["*.js", "test/*.csv"]
 pairs_trading = ["py.typed"]
 pmcc = ["data/*.csv.gz"]
 # generated pmcc research outputs are kept out of distributions via MANIFEST.in
+# (all four packages live under examples/, see [tool.setuptools.packages.find])
 
 [tool.setuptools_scm]
 version_file = "backtesting/_version.py"
 fallback_version = "0.6.5.post1"
 
 [tool.pytest.ini_options]
-testpaths = ["tests", "pmcc/test_pmcc.py", "bot/tests"]
+testpaths = ["tests", "examples/pmcc/test_pmcc.py", "bot/tests"]
 addopts = "-q"
 
 [tool.ruff]
@@ -144,15 +146,18 @@ select = [
     'YTT',
 ]
 
+[tool.ruff.lint.isort]
+known-first-party = ["backtesting", "pairs_trading", "pmcc", "index_inclusion", "inclusion_bot"]
+
 [tool.ruff.lint.per-file-ignores]
 # CLIs, scripts and examples intentionally print to the console;
 # report/figure text intentionally uses Greek letters (α, β, σ, δ).
-'pairs_trading/cli.py' = ['T201']
-'scripts/*' = ['T201']
-'examples/*' = ['T201', 'RUF001']
-'pairs_trading/report.py' = ['RUF001']
-'pairs_trading/experiments.py' = ['RUF001', 'T201']
-'pairs_trading/plotting.py' = ['RUF001']
+'examples/pairs_trading/cli.py' = ['T201']
+'examples/scripts/*' = ['T201']
+'examples/*.py' = ['T201', 'RUF001']
+'examples/pairs_trading/report.py' = ['RUF001']
+'examples/pairs_trading/experiments.py' = ['RUF001', 'T201']
+'examples/pairs_trading/plotting.py' = ['RUF001']
 
 [tool.ruff.lint.pep8-naming]
 ignore-names = [
