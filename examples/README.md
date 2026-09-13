@@ -1,4 +1,4 @@
-# Strategy examples — three strategies on the backtesting.py framework
+# Strategy examples — four strategies on the backtesting.py framework
 
 Each script defines a `backtesting.Strategy`, runs it through `Backtest`
 (execution, costs, equity, statistics), sweeps its parameters with the
@@ -7,25 +7,27 @@ configuration to `figures/` (plus the framework's interactive tearsheet of the
 best run as `*_tearsheet.html`) and the tables to `tables/`. The
 strategy-specific machinery the framework cannot provide — cointegration
 statistics, option pricing, the index-market simulator — lives in the support
-packages next to the scripts (`pairs_trading/`, `pmcc/`, `index_inclusion/`).
+packages next to the scripts (`pairs_trading/`, `pmcc/`, `index_inclusion/`);
+the momentum example needs none beyond the vendored crypto panel.
 
 ```bash
 uv run python examples/pairs_trading_strategy.py     # ~5 min
 uv run python examples/pmcc_strategy.py              # ~3 min (multi-process)
 uv run python examples/index_inclusion_strategy.py   # ~3 min
+TQDM_DISABLE=1 uv run python examples/momentum_strategy.py   # ~15 s (multi-process)
 ```
 
 Add `--quick` for a small smoke run (what CI executes).
 
-| | Pairs trading | Poor Man's Covered Call | Index inclusion |
-|---|---|---|---|
-| Script | `pairs_trading_strategy.py` | `pmcc_strategy.py` | `index_inclusion_strategy.py` |
-| Strategy class | `PairsTrading` | `PMCCRegime` | `IndexInclusion` |
-| Instrument fed to the framework | walk-forward hedged-spread tape (one pair) | the PMCC package's daily total-return index | stitched tape of screened candidates |
-| What `next()` decides | z-score entries/exits/stops, force-flat per window | when to be in the package (vol regime) | buy announced/predicted additions, hold ≤ N sessions |
-| `bt.optimize` over | entry × exit × z-window | exit × re-entry vol thresholds | holding period (per screener setting) |
-| Best found | 2.5σ / 0 / 20-bar, Sharpe **0.52** (default 0.35) | vol > 0.35 out / < 0.30 in, Sharpe **0.77** (always-in 0.73) | hold ≤ 25 / buffer 2 / 15 d, Sharpe **1.39** (default 1.27) |
-| …and does it hold up? | best keeps the default's 8% drawdown with fewer trades; NW t ≈ 3 on the default | **fails on 10/10 single names** — always-in is the honest answer | **0.86 vs 0.86 across fresh market seeds** — the peak is noise |
+| | Pairs trading | Poor Man's Covered Call | Index inclusion | Multi-horizon momentum |
+|---|---|---|---|---|
+| Script | `pairs_trading_strategy.py` | `pmcc_strategy.py` | `index_inclusion_strategy.py` | `momentum_strategy.py` |
+| Strategy class | `PairsTrading` | `PMCCRegime` | `IndexInclusion` | `MultiHorizonMomentum` |
+| Instrument fed to the framework | walk-forward hedged-spread tape (one pair) | the PMCC package's daily total-return index | stitched tape of screened candidates | one `FractionalBacktest` sleeve per coin (12); the book sums their P&L |
+| What `next()` decides | z-score entries/exits/stops, force-flat per window | when to be in the package (vol regime) | buy announced/predicted additions, hold ≤ N sessions | score = Σ sign(close − close *n* ago), vol-scaled target, hold small drifts |
+| `bt.optimize` over | entry × exit × z-window | exit × re-entry vol thresholds | holding period (per screener setting) | horizon set × hold band, judged at the book level (12 sleeves per cell) |
+| Best found | 2.5σ / 0 / 20-bar, Sharpe **0.52** (default 0.35) | vol > 0.35 out / < 0.30 in, Sharpe **0.77** (always-in 0.73) | hold ≤ 25 / buffer 2 / 15 d, Sharpe **1.39** (default 1.27) | 5/10/21/42 bars, band 1, Sharpe **0.92** (video default 0.70) |
+| …and does it hold up? | best keeps the default's 8% drawdown with fewer trades; NW t ≈ 3 on the default | **fails on 10/10 single names** — always-in is the honest answer | **0.86 vs 0.86 across fresh market seeds** — the peak is noise | the video's look-backs win at every band; **costs decide** (1.02 → 0.85 from 0 to 25 bp); per-coin optima disagree |
 
 ## 1. Pairs trading — `pairs_trading_strategy.py`
 
@@ -116,3 +118,56 @@ trades. **On fresh seeds the best and the default are indistinguishable (mean
 Sharpe 0.86 vs 0.86)** — the peak was fitted to one draw of the simulator.
 Absolute levels reflect a 1990s-sized planted effect; the real edge in today's
 mega-cap indices is far smaller.
+
+## 4. Multi-horizon momentum — `momentum_strategy.py`
+
+Man AHL's multi-horizon time-series momentum (Moskowitz, Ooi & Pedersen 2012;
+Hurst, Ooi & Pedersen's century of trend evidence), as described in the video
+this example reproduces, on crypto: for look-backs of one week, two weeks,
+one month and two months (5, 10, 21, 42 bars) take the sign of today's close
+minus the close *n* bars ago; the **score** is the sum of the four signs, −4
+to +4, and every coin is sized to the same risk — `position = score / 4 ×
+target risk / realized vol` (3% per coin, 42-bar vol, floor 15%). The score is
+computed on the daily close and executed at the next bar's open, which in a
+market that never closes is that same close (the tape's open *is* the
+previous close), with 15 bp per side of fee plus slippage on every fill. A
+change of target smaller than `hold_band` × the full-score position is held,
+not traded. `backtesting.py` trades one instrument, so every coin is one
+`FractionalBacktest` sleeve (millionths of a coin) and the **book** is the
+sum of the sleeves' P&L on one capital base; the book's own statistics come
+from the framework too, as an always-in index through `Backtest`. Universe:
+the panel's twelve non-stablecoin assets from 2018 (the panel has no volume,
+so the video's monthly top-ten-by-volume re-selection cannot be reproduced;
+DOT enters once it has a history).
+
+| Book-level grid | Best vs benchmarks | The video's score check |
+|---|---|---|
+| ![](figures/momentum_best_grid.png) | ![](figures/momentum_best_equity.png) | ![](figures/momentum_score_diagnostic.png) |
+
+Every cell of the horizon set × hold band grid runs all twelve sleeves and
+is scored on the book, because one coin's Sharpe is noise. **Best: the
+video's own look-backs with hold band 1 — Sharpe 0.92, CAGR 11.6% at 12.7%
+volatility, max drawdown 12.5%, 2,009 trades, 32% winners, −0.08 correlation
+to BTC, monthly skew +1.6** (the video reports Sharpe just under 1, CAGR 7.3%
+at 7.6% vol, a 10% drawdown, 29% winners, skew +1.05 — the same animal at a
+smaller risk budget; Sharpe is scale-free). Band 1 is the widest possible
+band: a full-score entry from flat is exactly one full position, so it trades
+only on full-conviction entries and full-position moves. The video's "hold
+small drifts" rule is where the money is: rebalancing every 25% drift (the
+`video default` row) makes 11,000 trades, turns the book 25× a year and hands
+28% of the final equity to costs for a Sharpe of 0.70; the best band trades
+8× a year and pays 8%. The same look-backs beat the faster and slower sets at
+every band, so the horizon choice is not what was fitted. What the strategy
+is *for* shows in the calendar years: **+19% in 2018 and −1% in 2022 while
+BTC lost 73% and 64%**, at the price of +1% in 2023 while BTC gained 156% —
+the vol-scaled long-only book with the same sizing (score pinned at +4) makes
+more money (CAGR 14.9%) with a Sharpe of 0.57 and a 49% drawdown. The
+score diagnostic pools 36k coin-days: the next-day return rises with the
+score and the +4 bucket stands apart (t = 2.6 clustered by day, 3.0 after
+BTC beta; the video finds 2.9 and 2.1), which is exactly why band 1's
+full-conviction entries work. Costs are the whole story of the edge: the
+same book scores 1.02 at zero cost, 0.95 at 10 bp, 0.85 at 25 bp per side.
+Per coin, the book's cell is within 0.05 of the coin's own optimum on five
+of twelve coins and the twelve optima spread over seven different cells
+(`figures/momentum_per_coin.png`) — the book, not the coin, is the unit that
+generalizes.

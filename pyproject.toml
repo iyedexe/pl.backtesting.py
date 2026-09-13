@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "backtesting"
-description = "Backtest trading strategies in Python — fork with three strategy research labs"
+description = "Backtest trading strategies in Python — fork with four strategy research examples"
 readme = "README.md"
 license = "AGPL-3.0-or-later"
 requires-python = ">=3.13"
@@ -15,9 +15,10 @@ keywords = [
     "cointegration", "commodities", "covered-call", "crypto", "currency",
     "equity", "etf", "finance", "financial", "forex", "futures", "fx", "gold",
     "hedge", "index-effect", "index-inclusion", "invest", "investing",
-    "investment", "leaps", "market", "mean-reversion", "ohlc", "ohlcv",
-    "options", "pairs-trading", "pmcc", "quant", "quantitative", "spread",
-    "statistical-arbitrage", "stocks", "strategy", "trading",
+    "investment", "leaps", "market", "mean-reversion", "momentum", "ohlc",
+    "ohlcv", "options", "pairs-trading", "pmcc", "quant", "quantitative",
+    "spread", "statistical-arbitrage", "stocks", "strategy", "trading",
+    "trend-following",
 ]
 classifiers = [
     "Intended Audience :: Financial and Insurance Industry",

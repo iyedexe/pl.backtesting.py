@@ -62,7 +62,7 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with: { enable-cache: true }
       - run: uv sync --locked --extra test --python 3.13
-      # pairs_trading unit tests, PMCC unit tests, index-inclusion bot tests
+      # pairs_trading, index-inclusion, momentum unit tests; PMCC unit tests; bot tests
       - run: uv run pytest
       - run: uv run inclusion-bot selftest
       # Smoke-run one small end-to-end experiment per strategy
@@ -70,6 +70,7 @@ jobs:
       - run: uv run python examples/pairs_trading_strategy.py --quick
       - run: uv run python examples/index_inclusion_strategy.py --quick
       - run: uv run python examples/pmcc_strategy.py --quick
+      - run: TQDM_DISABLE=1 uv run python examples/momentum_strategy.py --quick
 
   docs:
     needs: lint

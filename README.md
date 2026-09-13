@@ -1,21 +1,24 @@
-# pl.backtesting.py — three trading strategies, backtested honestly
+# pl.backtesting.py — four trading strategies, backtested honestly
 
 A research fork of [backtesting.py](https://github.com/kernc/backtesting.py)
-that bundles **three independent strategy studies**, each with its own
-package, vendored data, tests and write-up, in one
-[uv](https://docs.astral.sh/uv/)-managed project on **Python 3.13**:
+that bundles **four strategy studies** — three research labs with their own
+packages, vendored data, tests and write-ups, plus a self-contained crypto
+momentum example — in one [uv](https://docs.astral.sh/uv/)-managed project
+on **Python 3.13**:
 
 | Strategy | What it trades | Where it's tested | Verdict (details below) |
 |---|---|---|---|
 | **Pairs trading** (`examples/pairs_trading/`) | the spread between two cointegrated assets, walk-forward | crypto, US stocks, forex, commodities, cross-asset; 1971→2026 | only the WTI/Brent oil spread survives out of sample; famous stock/FX/crypto pairs don't |
 | **Poor Man's Covered Call** (`examples/pmcc/`) | deep-ITM LEAPS call + short monthly call | 17 French large caps, 2000→2015, synthetic option chains | covered-call-like returns with roughly half the drawdown, ~2 pp/yr less than the covered call |
 | **Index inclusion** (`examples/index_inclusion/`, `bot/`) | stocks about to be added to a rules-based index | synthetic point-in-time market with an FTSE-100 rulebook; live bot for S&P 500 / Nasdaq-100 / FTSE 100 / DAX 40 | the machinery captures the planted index effect; the real edge today is small in mega caps |
+| **Multi-horizon momentum** (`examples/momentum_strategy.py`) | Man AHL's trend rule — four look-back signs, every coin sized to the same risk | 12 cryptos, daily 2018→2026, next-open fills, 15 bp per side | Sharpe 0.9 net with a 12% drawdown and no BTC beta; the drift-hold band matters more than the look-backs, and costs take a fifth of the edge |
 
-**All three strategies run on the backtesting.py framework** — one
+**All four strategies run on the backtesting.py framework** — one
 `Strategy` subclass per script in `examples/`, executed, costed, optimized
-(`bt.optimize`) and charted by the framework, with the strategy-specific
-machinery (cointegration statistics, option pricing, the index simulator)
-living in support packages under `examples/`. Each script finds and plots the
+(`bt.optimize`, or a book-level grid where the strategy is a multi-asset
+book) and charted by the framework, with the strategy-specific machinery
+(cointegration statistics, option pricing, the index simulator) living in
+support packages under `examples/`. Each script finds and plots the
 **best-performing configuration** ([examples/README.md](examples/README.md)):
 
 | Strategy | Best configuration (`bt.optimize`) | Sharpe: best / default / benchmark | Does it hold up? |
@@ -23,11 +26,12 @@ living in support packages under `examples/`. Each script finds and plots the
 | Pairs trading — WTI/Brent, walk-forward OOS | enter 2.5σ, exit 0, 20-bar z-window | **0.52** / 0.35 / two-leg engine agrees on 79 of 79 trades | same 8% drawdown, fewer trades; default has NW t ≈ 3 |
 | Poor Man's Covered Call — 10 French large caps | step aside at realized vol > 0.35, back in < 0.30 | **0.77** / 0.73 always-in / covered call 0.66, buy & hold 0.37 | the filter loses on 10/10 single names — always-in is the answer |
 | Index inclusion — synthetic SIX 100 | hold ≤ 25, buffer 2, hunt 15 d pre-cutoff | **1.39** / 1.27 / — | 0.86 vs 0.86 on fresh market seeds — the peak is noise |
+| Multi-horizon momentum — 12 cryptos, 2018–2026 | look-backs 5/10/21/42, hold band 1 (book-level grid) | **0.92** / 0.70 video default / vol-scaled long only 0.57, BTC 0.26 | the video's look-backs win at every band; 1.02 → 0.85 from 0 to 25 bp of costs |
 
-| Pairs trading | Poor Man's Covered Call | Index inclusion |
-|---|---|---|
-| ![](examples/figures/pairs_best_equity.png) | ![](examples/figures/pmcc_best_equity.png) | ![](examples/figures/index_best_equity.png) |
-| ![](examples/figures/pairs_best_grid.png) | ![](examples/figures/pmcc_best_grid.png) | ![](examples/figures/index_best_grid.png) |
+| Pairs trading | Poor Man's Covered Call | Index inclusion | Multi-horizon momentum |
+|---|---|---|---|
+| ![](examples/figures/pairs_best_equity.png) | ![](examples/figures/pmcc_best_equity.png) | ![](examples/figures/index_best_equity.png) | ![](examples/figures/momentum_best_equity.png) |
+| ![](examples/figures/pairs_best_grid.png) | ![](examples/figures/pmcc_best_grid.png) | ![](examples/figures/index_best_grid.png) | ![](examples/figures/momentum_best_grid.png) |
 
 ## Quickstart
 
@@ -39,6 +43,7 @@ uv run python -m backtesting.test         # the upstream library's own suite
 uv run python examples/pairs_trading_strategy.py     # pairs on the framework: rank, optimize, plot
 uv run python examples/pmcc_strategy.py              # PMCC index + regime filter on the framework
 uv run python examples/index_inclusion_strategy.py   # index inclusion on the framework
+uv run python examples/momentum_strategy.py          # multi-horizon momentum on 12 cryptos
 
 uv run pairs all                          # full five-asset-class pairs study -> examples/research/reports/report.md
 uv run pmcc all                           # full PMCC headline + 800-run sensitivity -> examples/pmcc/results/
@@ -50,7 +55,7 @@ daily panels, ~5 MB for pairs, ~300 KB for PMCC; the index study simulates its
 market) — no API keys or network access required. Add `--quick` to any example
 for a small smoke run.
 
-## The three strategies
+## The four strategies
 
 ### 1. Pairs trading across asset classes — `examples/pairs_trading_strategy.py`
 
@@ -141,6 +146,41 @@ a deeper prediction buffer only forfeits trades. On today's US mega caps the
 real announcement-to-effective effect is mostly arbitraged away
 (Greenwood & Sammon 2025); smaller and less-arbitraged indices retain more.
 
+### 4. Multi-horizon momentum — `examples/momentum_strategy.py`
+
+The trend rule Man AHL describes (Moskowitz, Ooi & Pedersen's *Time Series
+Momentum*, 2012; Hurst, Ooi & Pedersen's 140 years of evidence): for
+look-backs of one week, two weeks, one month and two months take the sign of
+today's close minus the close that long ago; sum the four signs into a score
+from −4 to +4; size every coin to the same risk (`score / 4 × target risk /
+realized vol`); decide on the close, fill at the next open (the same price in
+a market that never closes) with fees and slippage; hold small drifts of the
+target rather than trade them. Run on the vendored Coin Metrics daily data
+for the panel's twelve non-stablecoin assets from 2018 — the video's
+monthly re-selection by dollar volume needs volume the panel does not have.
+
+**Findings** ([examples/README.md](examples/README.md#4-multi-horizon-momentum--momentum_strategypy)):
+with the video's look-backs and the widest hold band the book earns a
+**Sharpe of 0.92 net of 15 bp per side (CAGR 11.6% at 12.7% vol, 12.5%
+drawdown, 32% winners, correlation −0.08 to BTC, monthly skew +1.6)**;
+the video reports the same shape at a smaller risk budget (Sharpe ≈ 1,
+CAGR 7.3%, vol 7.6%, 29% winners). It made +19% in 2018 and −1% in 2022 while
+BTC lost 73% and 64%, and +1% in 2023 while BTC gained 156%. The hold band
+is where the money is — rebalancing every 25% drift costs 28% of the final
+equity and a Sharpe of 0.70 — and costs are the whole story of the edge
+(1.02 → 0.85 from 0 to 25 bp per side). The score really does predict the
+next day (t = 2.6 clustered by day, 3.0 after BTC beta; the video's 2.9/2.1),
+almost entirely from the +4 bucket.
+
+**On the framework:** every coin is one `FractionalBacktest` sleeve running
+`MultiHorizonMomentum` (the video's rule in `next()`); the book is the sum of
+the sleeves' P&L on one capital base and its statistics come from the
+framework as an always-in index through `Backtest`. The horizon set × hold
+band grid runs every sleeve per cell and is judged at the book level; the
+per-coin optima that `bt.optimize` would return coin by coin are read off the
+same runs (they spread over seven cells for twelve coins). The BTC sleeve's
+interactive tearsheet is `examples/figures/momentum_tearsheet.html`.
+
 ## Layout
 
 ```
@@ -149,6 +189,7 @@ examples/
   pairs_trading_strategy.py     pairs trading on the framework (rank, optimize, plot)
   pmcc_strategy.py              PMCC index + regime filter on the framework
   index_inclusion_strategy.py   index inclusion on the framework
+  momentum_strategy.py          multi-horizon crypto momentum on the framework (sleeves, book, grid)
   figures/, tables/             generated best-configuration graphs and tables
   pairs_trading/                pairs support package (stats, two-leg engine, data, `pairs` CLI)
   pmcc/                         PMCC support package (option pricing/engine, data/, results/, live/)
@@ -171,8 +212,8 @@ uv run doc/build.sh                  # API docs + rendered example notebooks
 ```
 
 CI (`.github/workflows/ci.yml`) runs lint, the library suite on 3.13/3.14, the
-three strategy test suites, the bot self-test, and a `--quick` smoke run of
-each example script.
+strategy test suites, the bot self-test, and a `--quick` smoke run of each
+example script.
 
 ## Relationship to upstream
 

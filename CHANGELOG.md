@@ -3,6 +3,18 @@ What's New
 
 These were the major changes contributing to each release:
 
+### Fork: four strategies on the framework
+(2026-09-13)
+
+* `examples/momentum_strategy.py` — Man AHL's multi-horizon time-series
+  momentum on crypto (Moskowitz-Ooi-Pedersen): the sum of four trend signs
+  over 5/10/21/42 bars, every coin sized to the same risk, executed at the
+  next open with fees and slippage, small drifts held. One
+  `FractionalBacktest` sleeve per coin, the book summed on one capital base
+  and measured by the framework; a horizon-set × hold-band grid judged at
+  the book level, the video's score-predictiveness check, cost sensitivity
+  and per-coin optima; `tests/test_momentum_strategy.py`.
+
 ### Fork: three strategy research labs
 (2026-09-06)
 
